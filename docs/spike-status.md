@@ -21,6 +21,23 @@ Verified on 2026-09-28, locally, in the Workers runtime via
 | Tray placement is conservative | Missing body, unanswered questions, and low-confidence `needs_action` all route to Review rather than to a confident verdict. |
 | Corrections beat the model | A `set` overrides the model and carries `confidence: null` rather than a fabricated 1; a `clear` re-exposes the model answer. |
 | MIME handling | HTML-only mail converts to text, `text/plain` wins, oversized bodies are truncated, attachment-only mail is `missing_body`. |
+| Read side is read-only | There is no mutation endpoint; `/api/actions`, `/api/archive`, and `/api/send` all 404. |
+| List rows carry no body | A list row has no `body`, `text`, or `snippet` field; bodies come from a separate one-per-request route marked `no-store`. |
+| DTOs are validated at runtime | Zod schemas reject a confidence above 1, an unknown question, and a rating outside 1..5. |
+| A correction survives the next read | Regression test: the Worker originally built a repository per request, so corrections were acknowledged then discarded. |
+
+## Verified in the browser
+
+Driven through the Codex in-app browser against the dev server.
+
+- Five trays render; switching trays filters the list.
+- An attachment-only message shows every answer as "not answered" rather than a
+  confident low-priority verdict, states why, and links to Gmail.
+- Correcting a field persists and displays as "your call" with a `corrected`
+  marker, never as a model confidence percentage.
+- A thread with an unclassified new reply shows a "1 newer message" warning.
+- At 390x844 the list is full width, the reader is full screen with a Back
+  control, no text is clipped, and the page does not scroll horizontally.
 
 ## Not verifiable here, and why
 
