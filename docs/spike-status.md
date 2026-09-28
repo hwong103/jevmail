@@ -1,7 +1,9 @@
 # Gate A spike status
 
 Verified on 2026-09-28, locally, in the Workers runtime via
-`@cloudflare/vitest-pool-workers`. `npm test` runs 46 assertions across 6 files.
+`@cloudflare/vitest-pool-workers`. `npm test` runs 118 assertions across 12
+files. The read-only vertical slice is complete against fixtures; the proofs
+below are separated by how far they have actually been exercised.
 
 ## Proven locally
 
@@ -45,8 +47,6 @@ made to Google's servers from this checkout.
 | Refresh | The stored grant is decrypted and exchanged | That a refreshed token actually works against Gmail |
 | Callback binding | First-login-binds, rejection, reconnect keeps the account id | A real redirect round trip |
 | Body fetch | The fetcher builds a real adapter from a stored grant | A real `messages.get` returning a parseable body |
-
-## Not verifiable here, and why
 
 ## Verified in the browser
 
