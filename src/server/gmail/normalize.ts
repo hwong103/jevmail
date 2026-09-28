@@ -19,6 +19,7 @@ export interface GmailHeader {
 export interface GmailPart {
   mimeType: string;
   filename?: string;
+  headers?: GmailHeader[];
   body?: { attachmentId?: string; data?: string; size?: number };
   parts?: GmailPart[];
 }
