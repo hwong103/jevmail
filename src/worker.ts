@@ -3,6 +3,7 @@
 
 import { Hono } from "hono";
 import { isConfigured, type Env } from "./runtime/env";
+import { createAuthRouter } from "./routes/auth";
 import { createMailRouter } from "./routes/mail";
 import type { MailRepository } from "./server/mail/repository";
 import { handleJob } from "./server/jobs/consumer";
@@ -48,6 +49,7 @@ app.use("/api/*", async (c, next) => {
 });
 
 app.route("/api", createMailRouter());
+app.route("/", createAuthRouter());
 
 app.notFound((c) => c.json({ error: "not_found" }, 404));
 

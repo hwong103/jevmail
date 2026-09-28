@@ -9,6 +9,11 @@ import { JevClassificationPort, type AiBinding } from "../classification/jev";
 import { createFixturePort } from "../classification/fixture";
 import type { ClassificationPort } from "../classification/classify";
 import type { GmailMessage } from "../gmail/normalize";
+import {
+  buildAccessTokenProvider,
+  type AccessTokenProvider,
+} from "../auth/credentials";
+import type { GoogleConfig } from "../auth/google";
 import type { Env } from "../../runtime/env";
 
 export type GmailFetcher = (gmailMessageId: string) => Promise<GmailMessage | null>;
@@ -26,22 +31,30 @@ export function buildClassificationPort(env: Env): ClassificationPort | null {
 }
 
 /**
- * Fetching a body needs a live Gmail OAuth grant, which is not wired yet. This
- * returns null rather than a fetcher that cannot authenticate, so classify jobs
- * park as blocked_auth instead of failing repeatedly.
+ * Fetches one message for classification. The body is returned to the caller
+ * and immediately discarded: it is never written anywhere.
  */
 export async function buildGmailFetcher(
   env: Env,
   accountId: string,
 ): Promise<GmailFetcher | null> {
   if (!env.DB) return null;
-  const row = await env.DB.prepare(
-    "SELECT encrypted_refresh_token FROM accounts WHERE id = ? AND status = 'active'",
-  )
-    .bind(accountId)
-    .first<{ encrypted_refresh_token: string | null }>();
-  if (!row?.encrypted_refresh_token) return null;
-  // A grant is stored, but the OAuth layer that exchanges it for an access
-  // token does not exist yet. Returning null here is the honest answer.
-  return null;
+  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET || !env.CREDENTIAL_KEY) return null;
+
+  const config: GoogleConfig = {
+    clientId: env.GOOGLE_CLIENT_ID,
+    clientSecret: env.GOOGLE_CLIENT_SECRET,
+    redirectUri: "",
+  };
+  const provider: AccessTokenProvider = buildAccessTokenProvider(
+    env.DB,
+    config,
+    env.CREDENTIAL_KEY,
+    Number(env.CREDENTIAL_KEY_VERSION ?? 1),
+  );
+  const adapter = await provider.adapterFor(accountId);
+  return async (gmailMessageId: string) => {
+    const { message } = await adapter.getMessage(gmailMessageId, "full");
+    return message as unknown as GmailMessage;
+  };
 }

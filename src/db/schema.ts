@@ -36,6 +36,9 @@ export const accounts = sqliteTable(
     gmailAddress: text("gmail_address").notNull(),
     // Encrypted at rest. Never returned to a browser.
     encryptedRefreshToken: text("encrypted_refresh_token"),
+    // AES-GCM's initialisation vector. Required to decrypt, so it is stored
+    // beside the ciphertext rather than being packed into it.
+    credentialIv: text("credential_iv"),
     keyVersion: integer("key_version"),
     grantedScopes: text("granted_scopes", { mode: "json" })
       .$type<string[]>()

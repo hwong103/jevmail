@@ -25,6 +25,28 @@ Verified on 2026-09-28, locally, in the Workers runtime via
 | List rows carry no body | A list row has no `body`, `text`, or `snippet` field; bodies come from a separate one-per-request route marked `no-store`. |
 | DTOs are validated at runtime | Zod schemas reject a confidence above 1, an unknown question, and a rating outside 1..5. |
 | A correction survives the next read | Regression test: the Worker originally built a repository per request, so corrections were acknowledged then discarded. |
+| D1 read path is bounded and index-backed | `D1MailRepository` caps pages, chunks IN lists to 40, and uses opaque page tokens. |
+| A stale classification cannot overwrite a newer one | A classify job whose input revision has moved on is discarded, not stored. |
+| A model body never reaches D1 | The classify test asserts the body text is absent from the stored classification row. |
+| A first login binds the installation | A second identity is rejected, and the partial unique index holds under a simulated race. |
+| Only `gmail.readonly` is requested | The scope list is asserted to contain neither `modify` nor `send`. |
+| The grant is never stored in plaintext | The stored account row is asserted to contain no `ya29.` or `1//` token. |
+| The credential IV is stored beside the ciphertext | Migration `0003`; without it a stored refresh token cannot be decrypted. |
+
+## Wired but not exercised against Google
+
+The OAuth code paths exist and are unit-tested, but no request has ever been
+made to Google's servers from this checkout.
+
+| Path | What is proven locally | What still needs a real client |
+|---|---|---|
+| Authorization URL | Offline access, scope list, and state are set correctly | That Google accepts the client and returns a code |
+| Code exchange | Request shape and error mapping | A real authorization code producing a refresh token |
+| Refresh | The stored grant is decrypted and exchanged | That a refreshed token actually works against Gmail |
+| Callback binding | First-login-binds, rejection, reconnect keeps the account id | A real redirect round trip |
+| Body fetch | The fetcher builds a real adapter from a stored grant | A real `messages.get` returning a parseable body |
+
+## Not verifiable here, and why
 
 ## Verified in the browser
 
@@ -47,11 +69,11 @@ and **not** marked done.
 | Proof | Blocked by | Cheapest next step |
 |---|---|---|
 | Production-status OAuth grant survives a Worker restart | Needs a Google Cloud project and an authorized mailbox | Publish the consent screen to `In production`, then grant `gmail.readonly`. |
-| No Google token in any browser response, cookie, log, or bundle | Same | Inspect a real session once auth is wired. |
-| Better Auth stores tokens server-side under D1 sessions | Better Auth is not yet wired in | Read the library, then assert the property in a test. |
+| No Google token in any browser response, cookie, log, or bundle | Same | Inspect a real session once the first grant completes. |
+| Better Auth stores tokens server-side under D1 sessions | Better Auth is not wired in; the app currently has no session layer | Read the library, then assert the property in a test. |
 | A real scheduled invocation updates a checkpoint | Requires a deployed Worker | After the first deploy, watch the cron log. |
 | A queue job delivered twice completes once in production | Requires a deployed Worker and a real queue | Trigger a duplicate delivery against the deployed queue. |
-| Jev returns typed answers with absent confidence preserved | Needs a provider account and key | One synthetic request through the real adapter. |
+| Jev returns typed answers with absent confidence preserved | The adapter is proven against Cloudflare's published response shape, but no live call has been made | One synthetic request through `env.AI.run('typesafe/jev')`. |
 | A real read count on a real mailbox page | Needs a connected mailbox | `npm run verify:read-budget -- --remote` after first sync. |
 | Installed PWA on Android | Needs a physical device | Manual install from Chrome. |
 

@@ -1,5 +1,5 @@
--- Aggregated schema for test bundling. Kept in step with
--- 0001_initial.sql and 0002_partial_unique.sql by scripts/check-migrations.mjs.
+-- Aggregated schema for test bundling. Generated from the numbered
+-- migrations by the pattern below; kept in step by scripts/check-migrations.mjs.
 --
 -- The Workers test runtime has no filesystem, so tests import this file
 -- through Vite ?raw. wrangler applies the numbered files to a real database.
@@ -48,3 +48,4 @@ CREATE INDEX audit_log_account_idx ON audit_log (account_id, created_at);
 CREATE UNIQUE INDEX principals_single_owner_idx ON principals (is_owner) WHERE is_owner = 1;
 CREATE UNIQUE INDEX classifications_live_per_message_idx ON classifications (account_id, gmail_message_id) WHERE status = 'complete';
 CREATE UNIQUE INDEX corrections_one_revision_idx ON corrections (account_id, gmail_message_id, revision);
+ALTER TABLE accounts ADD COLUMN credential_iv TEXT;

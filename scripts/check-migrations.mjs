@@ -1,7 +1,7 @@
 // Guards against migrations/0000.sql drifting from the numbered migrations that
 // wrangler actually applies. Fails the build if they diverge.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
 function normalize(sql) {
   return sql
@@ -20,9 +20,13 @@ function statements(sql) {
     .sort();
 }
 
+// Every numbered migration, so adding a file cannot silently skip the check.
 const combined = statements(
-  readFileSync("migrations/0001_initial.sql", "utf8") +
-    readFileSync("migrations/0002_partial_unique.sql", "utf8"),
+  readdirSync("migrations")
+    .filter((name) => /^\d{4}_.*\.sql$/.test(name))
+    .sort()
+    .map((name) => readFileSync(`migrations/${name}`, "utf8"))
+    .join("\n"),
 );
 const bundled = statements(readFileSync("migrations/0000.sql", "utf8"));
 
