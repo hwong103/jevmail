@@ -4,10 +4,10 @@
 import { Hono } from "hono";
 import { isConfigured, type Env } from "./runtime/env";
 import { createMailRouter } from "./routes/mail";
-import { FixtureMailRepository } from "./server/mail/fixtures";
 import type { MailRepository } from "./server/mail/repository";
 import { handleJob } from "./server/jobs/consumer";
 import { scheduledSync } from "./server/sync/cron";
+import { selectRepository, type BodyLoader } from "./runtime/repository";
 
 type AppEnv = {
   Bindings: Env;
@@ -25,16 +25,24 @@ app.get("/health", (c) =>
   }),
 );
 
-// Until a mailbox is connected, the read side runs on synthetic fixtures.
+// Until a mailbox is connected, the read side runs on synthetic fixtures. Once
+// an account row exists the same routes are served from D1, and the client
+// cannot tell the difference.
 //
-// One instance is shared across requests in an isolate, matching the lifetime a
-// D1 repository would have. Building a new repository per request looked
-// harmless but silently discarded every correction: the write landed in an
-// instance the next read could not see.
-const fixtureRepository = new FixtureMailRepository();
+// Fixtures are cached per isolate so a correction survives the next request.
+// Building a fresh repository per request looked harmless but silently
+// discarded every correction: the write landed in an instance the next read
+// could not see.
+let cachedFixtures: MailRepository | null = null;
 
 app.use("/api/*", async (c, next) => {
-  c.set("repository", fixtureRepository);
+  const bodyLoader: BodyLoader = async () => null;
+  const selected = await selectRepository(c.env, bodyLoader);
+  if (selected.source === "fixtures" && !cachedFixtures) {
+    const { FixtureMailRepository } = await import("./server/mail/fixtures");
+    cachedFixtures = new FixtureMailRepository();
+  }
+  c.set("repository", selected.source === "d1" ? selected.repository : (cachedFixtures as MailRepository));
   c.set("actorId", "fixture-actor");
   await next();
 });
