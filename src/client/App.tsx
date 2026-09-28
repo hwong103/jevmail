@@ -236,6 +236,9 @@ export function App() {
   }, []);
 
   const selected = page?.messages.find((item) => item.gmailMessageId === selectedId) ?? null;
+  // Set by the OAuth callback redirect. Present only for the redirect it follows.
+  const connected = typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).has("connected");
 
   const onCorrect = useCallback(
     async (question: Question, value: AnswerDto["value"]) => {
@@ -260,6 +263,9 @@ export function App() {
         <span className="status-pill">automation off</span>
         <span className="spacer" />
         <span className="status-pill">{syncLabel}</span>
+        <a className="connect" href="/auth/google">
+          {connected ? "Reconnect Gmail" : "Connect Gmail"}
+        </a>
       </header>
 
       <nav className="trays" aria-label="Trays">

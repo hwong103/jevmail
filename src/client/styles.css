@@ -79,6 +79,22 @@ button {
   white-space: nowrap;
 }
 
+.connect {
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+  color: var(--text);
+  padding: 5px 10px;
+  border-radius: var(--radius);
+  text-decoration: none;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.connect:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .trays {
   display: flex;
   gap: 4px;
