@@ -1,0 +1,50 @@
+{
+  // Public template. This file must stay generic: no installation-specific
+  // account IDs, database IDs, or owner addresses. Deployers generate their own.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "jevmail",
+  "main": "src/worker.ts",
+  // Pinned to the newest date the bundled workerd supports. Raising it requires
+  // bumping workerd first; the deploy and the test pool must agree.
+  "compatibility_date": "2026-08-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+  "d1_databases": [
+    {
+      // Bound by name. A deploy script resolves the real ID per installation.
+      "binding": "DB",
+      "database_name": "jevmail",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "JOB_QUEUE",
+        "queue": "jevmail-jobs"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "jevmail-jobs",
+        "max_batch_size": 5,
+        "max_batch_timeout": 5,
+        "max_retries": 5,
+        "dead_letter_queue": "jevmail-jobs-dlq"
+      }
+    ]
+  },
+  "triggers": {
+    // Polling path. Push notifications are deliberately deferred; see PLAN-v2.
+    "crons": ["*/7 * * * *"]
+  },
+  "vars": {
+    // Optional escape hatch. Unset by default: whoever signs in first binds the
+    // installation. Setting it pre-pins the principal and rejects other logins.
+    // OWNER_EMAIL: "you@example.com",
+    "JEV_PROVIDER": "vercel-gateway"
+  }
+}

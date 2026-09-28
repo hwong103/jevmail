@@ -1,0 +1,45 @@
+// Environment resolution. Fail-closed on anything security-relevant: a missing
+// secret disables the feature rather than silently degrading it.
+
+export interface Env {
+  DB: D1Database;
+  JOB_QUEUE: Queue<unknown>;
+  SESSION_SECRET?: string;
+  CREDENTIAL_KEY?: string;
+  CREDENTIAL_KEY_VERSION?: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  JEV_API_KEY?: string;
+  JEV_PROVIDER?: string;
+  OWNER_EMAIL?: string;
+  AUTH_SECRET?: string;
+  WORKER_VERSION?: string;
+}
+
+export class MissingConfigError extends Error {
+  constructor(readonly keys: readonly string[]) {
+    super(`Missing required configuration: ${keys.join(", ")}`);
+    this.name = "MissingConfigError";
+  }
+}
+
+export function requireConfig<T extends Record<string, string | undefined>>(
+  env: T,
+  keys: readonly string[],
+): Record<string, string> {
+  const missing = keys.filter((key) => {
+    const value = env[key];
+    return value === undefined || value === "";
+  });
+  if (missing.length > 0) throw new MissingConfigError(missing);
+  return Object.fromEntries(keys.map((key) => [key, env[key] as string]));
+}
+
+export function isConfigured(env: Env): boolean {
+  return Boolean(
+    env.GOOGLE_CLIENT_ID &&
+      env.GOOGLE_CLIENT_SECRET &&
+      (env.SESSION_SECRET || env.AUTH_SECRET) &&
+      env.CREDENTIAL_KEY,
+  );
+}

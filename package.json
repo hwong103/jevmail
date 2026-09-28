@@ -1,0 +1,37 @@
+{
+  "name": "jevmail",
+  "version": "0.1.0",
+  "description": "Self-hostable Gmail triage with Jev classification",
+  "scripts": {
+    "test": "npm run check:migrations && vitest run",
+    "dev": "vite",
+    "build": "vite build && tsc -p tsconfig.server.json",
+    "typecheck": "tsc --noEmit",
+    "check:migrations": "node scripts/check-migrations.mjs",
+    "test:db": "node scripts/check-migrations.mjs",
+    "deploy": "wrangler deploy",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "db:migrate": "wrangler d1 migrations apply DB --remote"
+  },
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "@hono/zod-validator": "^0.9.1",
+    "better-auth": "^1.7.6",
+    "drizzle-orm": "^0.45.3",
+    "hono": "^4.13.9",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.61.0",
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@cloudflare/workers-types": "^5.20260928.1",
+    "@types/node": "^26.6.3",
+    "@vitejs/plugin-react": "^6.1.1",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.1",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.142.0"
+  },
+  "typecheck": "tsc --noEmit"
+}

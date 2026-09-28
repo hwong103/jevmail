@@ -1,0 +1,15 @@
+# Copy to .dev.vars for local development. Never commit a filled-in copy.
+
+# Google OAuth client. Redirect URI must match exactly what the app prints.
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+
+# Server-side only. Never exposed to a browser.
+SESSION_SECRET=
+
+# Base64url 32-byte key for AES-GCM credential encryption. Rotatable.
+CREDENTIAL_KEY=
+CREDENTIAL_KEY_VERSION=1
+
+# Jev provider key, used server-side only.
+JEV_API_KEY=
