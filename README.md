@@ -1,5 +1,7 @@
 # Jevmail
 
+[![CI](https://github.com/hwong103/jevmail/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/hwong103/jevmail/actions/workflows/ci.yml)
+
 Private, ad-free Gmail triage. Gmail stays the canonical mailbox; Jev classifies;
 you review and correct; only then does anything get automated.
 
