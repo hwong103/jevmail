@@ -10,6 +10,9 @@ export default defineConfig({
     cloudflareTest({
       main: "./src/worker.ts",
       wrangler: { configPath: "./wrangler.jsonc" },
+      // A real deploy supplies SESSION_SECRET as a secret. Tests need a fixed
+      // value so a valid session can be minted and verified.
+      miniflare: { bindings: { SESSION_SECRET: "test-session-secret" } },
     }),
   ],
   test: {

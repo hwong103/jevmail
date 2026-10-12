@@ -36,7 +36,7 @@ those decisions and proposes actions but cannot execute in v1.
 ## Commands
 
 ```bash
-npm test          # migration sync check plus 46 tests in the Workers runtime
+npm test          # migration sync check plus the full suite in the Workers runtime
 npm run typecheck # tsc --noEmit
 npm run dev       # vite dev server
 npm run deploy    # wrangler deploy
@@ -44,8 +44,13 @@ npm run deploy    # wrangler deploy
 
 ## Current state
 
-Gate A spike, partially proven. See `docs/spike-status.md` for what is verified
-and what is blocked on credentials. Nothing is deployed.
+Gate A spike, partially proven. Nothing is deployed. `npm test` runs 100+ tests
+in the Workers runtime. The read-only slice runs on synthetic fixtures, and that
+demo stays open and unauthenticated; the live Gmail data path is not wired end to
+end (the reader body loader is a stub and classification needs an AI binding that
+is not configured). A minimal signed-session boundary now gates the live D1
+path, which fails closed for anonymous callers. See `docs/spike-status.md` for
+what is verified versus what is not implemented.
 
 ## Plan
 

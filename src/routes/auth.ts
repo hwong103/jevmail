@@ -1,13 +1,28 @@
 // OAuth routes. Worker A owns this directory; the integrator mounts it.
 //
-// The callback is deliberately narrow: it binds the account and redirects. It
-// never returns a token to the browser, and it sets the session cookie with
-// HttpOnly, Secure, and SameSite=Lax so the credential cannot be read by script.
+// The callback is deliberately narrow: it verifies the CSRF `state`, binds the
+// account, and redirects. It never returns a token to the browser, and it sets
+// the session cookie with HttpOnly, Secure, and SameSite=Lax so the credential
+// cannot be read by script.
+//
+// The `state` is minted here and bound to a short-lived cookie. The callback
+// rejects any request whose `state` does not match the cookie, so an attacker
+// cannot replay a callback against a victim's browser.
 
 import { Hono } from "hono";
 import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
+import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { bindAccount } from "../server/auth/bind";
+import {
+  OAUTH_STATE_COOKIE,
+  OAUTH_STATE_TTL_SECONDS,
+  SESSION_COOKIE,
+  SESSION_TTL_SECONDS,
+  randomOAuthState,
+  safeStringEqual,
+  signSession,
+} from "../server/auth/session";
 import {
   authorizationUrl,
   exchangeCode,
@@ -31,6 +46,8 @@ export interface AuthEnv {
     CREDENTIAL_KEY?: string;
     CREDENTIAL_KEY_VERSION?: string;
     OWNER_EMAIL?: string;
+    SESSION_SECRET?: string;
+    AUTH_SECRET?: string;
   };
 }
 
@@ -43,22 +60,44 @@ function configFor(env: AuthEnv["Bindings"]): GoogleConfig | null {
   };
 }
 
+function sessionSecret(env: AuthEnv["Bindings"]): string | null {
+  return env.SESSION_SECRET || env.AUTH_SECRET || null;
+}
+
 export function createAuthRouter(): Hono<AuthEnv> {
   const app = new Hono<AuthEnv>();
 
   app.get("/auth/google", (c) => {
     const config = configFor(c.env);
     if (!config) return c.text("OAuth is not configured", 503);
-    // The state is issued by the caller's session layer; this route only builds
-    // the URL, so the placeholder is replaced by the mount point.
-    const state = c.req.query("state") ?? "unset";
+    // Mint the CSRF token here and bind it to this browser. The same value goes
+    // to Google and into the cookie the callback checks.
+    const state = randomOAuthState();
+    setCookie(c, OAUTH_STATE_COOKIE, state, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "Lax",
+      path: "/",
+      maxAge: OAUTH_STATE_TTL_SECONDS,
+    });
     return c.redirect(authorizationUrl({ ...config, redirectUri: callbackOrigin(c.req.url) }, state));
   });
 
   app.get("/auth/callback", zValidator("query", callbackQuery), async (c) => {
-    const { code } = c.req.valid("query");
+    const { code, state } = c.req.valid("query");
+
+    // CSRF check first: a missing or mismatched state is rejected regardless of
+    // whether OAuth itself is configured. The state cookie is single-use.
+    const expectedState = getCookie(c, OAUTH_STATE_COOKIE);
+    if (!expectedState || !safeStringEqual(expectedState, state)) {
+      return c.text("Invalid OAuth state", 400);
+    }
+    deleteCookie(c, OAUTH_STATE_COOKIE, { path: "/" });
+
     const config = configFor(c.env);
     if (!config || !c.env.CREDENTIAL_KEY) return c.text("OAuth is not configured", 503);
+    const secret = sessionSecret(c.env);
+    if (!secret) return c.text("Session secret is not configured", 503);
 
     const tokens = await exchangeCode({ ...config, redirectUri: callbackOrigin(c.req.url) }, code);
     if (!tokens.refreshToken) {
@@ -96,6 +135,17 @@ export function createAuthRouter(): Hono<AuthEnv> {
     )
       .bind(resealed.encryptedRefreshToken, resealed.iv, resealed.keyVersion, outcome.accountId)
       .run();
+
+    // Establish the live session. This is the only place a live session is
+    // minted; `/api/*` verifies it before serving D1 data.
+    const session = await signSession(secret, outcome.principalId, SESSION_TTL_SECONDS);
+    setCookie(c, SESSION_COOKIE, session, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "Lax",
+      path: "/",
+      maxAge: SESSION_TTL_SECONDS,
+    });
 
     return c.redirect("/?connected=1", 302);
   });

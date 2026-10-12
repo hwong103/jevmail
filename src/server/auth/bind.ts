@@ -12,7 +12,7 @@
 import { OAUTH_SCOPES } from "./google";
 
 export type BindOutcome =
-  | { status: "bound"; accountId: string; isOwner: boolean }
+  | { status: "bound"; accountId: string; principalId: string; isOwner: boolean }
   | { status: "rejected"; reason: string };
 
 export interface BindInput {
@@ -115,7 +115,9 @@ export async function bindAccount(input: BindInput): Promise<BindOutcome> {
       .run();
   }
 
-  return { status: "bound", accountId, isOwner: true };
+  // principalId is the authenticated actor id: the live API derives `actorId`
+  // from the session's principal so corrections reference the real principal.
+  return { status: "bound", accountId, principalId, isOwner: true };
 }
 
 /**

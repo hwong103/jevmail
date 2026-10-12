@@ -2,9 +2,11 @@
 // routers and handlers, only this file mounts them.
 
 import { Hono } from "hono";
+import { getCookie } from "hono/cookie";
 import { isConfigured, type Env } from "./runtime/env";
 import { createAuthRouter } from "./routes/auth";
 import { createMailRouter } from "./routes/mail";
+import { SESSION_COOKIE, verifySession } from "./server/auth/session";
 import type { MailRepository } from "./server/mail/repository";
 import { handleJob } from "./server/jobs/consumer";
 import { scheduledSync } from "./server/sync/cron";
@@ -39,11 +41,27 @@ let cachedFixtures: MailRepository | null = null;
 app.use("/api/*", async (c, next) => {
   const bodyLoader: BodyLoader = async () => null;
   const selected = await selectRepository(c.env, bodyLoader);
-  if (selected.source === "fixtures" && !cachedFixtures) {
+
+  if (selected.source === "d1") {
+    // Live data fails closed: no valid session means no mailbox metadata and no
+    // corrections. `actorId` comes from the signed session principal, never a
+    // literal, so a real correction references the real principal.
+    const secret = c.env.SESSION_SECRET ?? c.env.AUTH_SECRET;
+    const session = await verifySession(secret, getCookie(c, SESSION_COOKIE));
+    if (!session) return c.json({ error: "unauthorized" }, 401);
+    c.set("repository", selected.repository);
+    c.set("actorId", session.principalId);
+    await next();
+    return;
+  }
+
+  // No account row: the synthetic-fixture demo stays freely readable so local
+  // dev and the existing browser evidence keep working.
+  if (!cachedFixtures) {
     const { FixtureMailRepository } = await import("./server/mail/fixtures");
     cachedFixtures = new FixtureMailRepository();
   }
-  c.set("repository", selected.source === "d1" ? selected.repository : (cachedFixtures as MailRepository));
+  c.set("repository", cachedFixtures as MailRepository);
   c.set("actorId", "fixture-actor");
   await next();
 });

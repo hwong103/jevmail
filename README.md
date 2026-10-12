@@ -22,33 +22,57 @@ attachment upload are out of scope for v1 and hand off to Gmail.
 - No multi-user accounts, signup, or team sharing. One mailbox per deployment.
 - Never sends, never permanently deletes.
 
-## Deploy to Cloudflare with guided Google setup
+## Running it today
 
-The deploy button provisions a Worker, a D1 database, and a queue, then asks for
-secrets.
+This is a read-only prototype. It runs against the **synthetic fixtures**
+bundled in the repository, and that demo path is open — anyone can load it and
+see the trays. **Live Gmail connection is not yet enabled for self-hosters.**
+The path that would read and classify a real mailbox is not wired end to end, so
+a self-hosted deployment cannot yet sync your mail. Everything below about
+Google consent is forward-looking, not a working install.
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?deploy-from=github)
+Local development and tests work today:
 
 ```bash
 git clone https://github.com/hwong103/jevmail.git
 cd jevmail
 npm install
-npm test
+npm test        # migration sync check plus the test suite
+npm run dev     # dev server against synthetic fixtures
 ```
 
+## Deployment status: not supported end to end
+
+There is **no one-click deploy**, and `wrangler deploy` as configured does not
+produce a working installation.
+
+- The Worker can be provisioned by hand (Worker, D1 database, queues), but the
+  live data path is incomplete, so a deployed instance cannot read a real
+  mailbox.
+- `wrangler deploy` ships the Worker **without the PWA**: this repository has no
+  frontend build step and no `assets` binding in `wrangler.jsonc`, so a deploy
+  does not publish the app shell.
+- Cron polling no-ops with no connected mailbox, and classification needs an AI
+  binding that is not configured.
+
+Treat deployment as a work in progress, not a supported installation path. See
+[docs/spike-status.md](docs/spike-status.md) for exactly what runs and what does
+not.
+
+## Google setup (forward-looking)
+
+The live path is not enabled yet. The intended self-hosting model is documented
+so the moving parts are visible and the setup is ready when the path lands, but
+none of it makes a deployment classify real mail today.
+
 Google does not allow any tool to create or configure your Google Cloud project
-on your behalf, so OAuth setup is a short guided walkthrough — about 20 to 40
-minutes. See [docs/setup.md](docs/setup.md) for the exact clicks, including the
-callback URL to copy.
+on your behalf, so OAuth setup is a manual walkthrough — about 20 to 40 minutes.
+See [docs/setup.md](docs/setup.md) for the exact clicks, including the callback
+URL to copy.
 
-## Deploy promise, stated honestly
-
-This is not one click end to end. The button handles the Cloudflare side. The
-Google side is manual because no tool may accept Google's terms on your behalf.
-
-Every self-hoster uses their **own** Google Cloud project and their **own** OAuth
-client. This repository never operates a shared OAuth app on your behalf, and
-publishing it creates no verification submission for anyone. You will see
+Every self-hoster would use their **own** Google Cloud project and their **own**
+OAuth client. This repository never operates a shared OAuth app on your behalf,
+and publishing it creates no verification submission for anyone. You would see
 Google's unverified-app warning screen, and that is expected.
 
 ### Set the consent screen to "In production"
@@ -83,6 +107,9 @@ Gmail API (canonical)  ->  Sync Worker  ->  D1 outbox  ->  Queue
   in v1.
 - **Reconcile** — Re-reads Gmail to resolve uncertain outcomes. Never blind-retries.
 
+This is the intended design. What is actually wired today — and what is not —
+is spelled out in [docs/spike-status.md](docs/spike-status.md).
+
 ## Design rules these tests enforce
 
 - Message bodies are never persisted, logged, or queued. There is deliberately
@@ -103,16 +130,18 @@ Gmail API (canonical)  ->  Sync Worker  ->  D1 outbox  ->  Queue
 | `npm test` | Migration sync check plus the test suite in the Workers runtime |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run dev` | Local dev server against synthetic fixtures |
-| `npm run deploy` | `wrangler deploy` |
+| `npm run deploy` | `wrangler deploy` (ships the Worker only — see Deployment status) |
 | `npm run db:migrate` | Apply migrations to the remote database |
 
 ## Status
 
-Gate A of the plan, with the read-only vertical slice built and tested against
-fixtures. OAuth and the live Gmail path are implemented but have not yet been
-exercised against a real account. See
-[docs/spike-status.md](docs/spike-status.md) for exactly what is proven, what is
-wired but unexercised, and what remains unverified.
+Gate A of the plan. The read-only vertical slice is built and tested against
+**synthetic fixtures**, and that demo path is open. The live Gmail path is **not**
+wired end to end: the reader body loader is a stub, classification needs an AI
+binding that is not configured, and the OAuth code paths have never been
+exercised against Google. Nothing is deployed. See
+[docs/spike-status.md](docs/spike-status.md) for what is proven, what is
+implemented but unexercised, and what is not implemented yet.
 
 ## Licence
 

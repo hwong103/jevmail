@@ -1,8 +1,10 @@
--- Aggregated schema for test bundling. Generated from the numbered
--- migrations by the pattern below; kept in step by scripts/check-migrations.mjs.
+-- Aggregated schema for test bundling. This file is NOT a migration: it lives
+-- outside migrations/ so `wrangler d1 migrations apply` never runs it, because
+-- running it after 0001_initial.sql would create every table twice and fail.
+-- scripts/check-migrations.mjs keeps it in step with the numbered migrations.
 --
 -- The Workers test runtime has no filesystem, so tests import this file
--- through Vite ?raw. wrangler applies the numbered files to a real database.
+-- through Vite ?raw. wrangler applies only the numbered files to a real database.
 --
 -- Statement order is preserved: a table must exist before any index or
 -- foreign key that references it.

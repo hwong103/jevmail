@@ -2,10 +2,11 @@
 // isolated D1, so every file sets its own schema up.
 //
 // The Workers test runtime has no filesystem, so the SQL is imported through
-// Vite's ?raw suffix. scripts/check-migrations.mjs keeps this file in step with
-// the numbered migrations wrangler applies to a real database.
+// Vite's ?raw suffix. The aggregate lives in tests/fixtures, not migrations/, so
+// wrangler never applies it to a real database.
+// scripts/check-migrations.mjs keeps it in step with the numbered migrations.
 
-import schemaSql from "../../migrations/0000.sql?raw";
+import schemaSql from "../fixtures/schema.sql?raw";
 
 export const TABLES = [
   "audit_log",

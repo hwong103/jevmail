@@ -1,9 +1,10 @@
 # Gate A spike status
 
 Verified on 2026-09-28, locally, in the Workers runtime via
-`@cloudflare/vitest-pool-workers`. `npm test` runs 118 assertions across 12
-files. The read-only vertical slice is complete against fixtures; the proofs
-below are separated by how far they have actually been exercised.
+`@cloudflare/vitest-pool-workers`. `npm test` runs the full suite — 100+ tests
+across the test files — in that runtime. The read-only vertical slice is
+complete against fixtures; the proofs below are separated by how far they have
+actually been exercised.
 
 ## Proven locally
 
@@ -61,32 +62,57 @@ Driven through the Codex in-app browser against the dev server.
 - At 390x844 the list is full width, the reader is full screen with a Back
   control, no text is clipped, and the page does not scroll horizontally.
 
-## Not verifiable here, and why
+## Implemented but not exercised (needs credentials or a deployment)
 
-These need credentials or a real Cloudflare deployment. They are **not** faked
-and **not** marked done.
+These paths exist in code and are unit-tested, but cannot be exercised from this
+checkout. They are **not** faked and **not** marked done.
 
 | Proof | Blocked by | Cheapest next step |
 |---|---|---|
 | Production-status OAuth grant survives a Worker restart | Needs a Google Cloud project and an authorized mailbox | Publish the consent screen to `In production`, then grant `gmail.readonly`. |
 | No Google token in any browser response, cookie, log, or bundle | Same | Inspect a real session once the first grant completes. |
-| Better Auth stores tokens server-side under D1 sessions | Better Auth is not wired in; the app currently has no session layer | Read the library, then assert the property in a test. |
 | A real scheduled invocation updates a checkpoint | Requires a deployed Worker | After the first deploy, watch the cron log. |
 | A queue job delivered twice completes once in production | Requires a deployed Worker and a real queue | Trigger a duplicate delivery against the deployed queue. |
-| Jev returns typed answers with absent confidence preserved | The adapter is proven against Cloudflare's published response shape, but no live call has been made | One synthetic request through `env.AI.run('typesafe/jev')`. |
-| A real read count on a real mailbox page | Needs a connected mailbox | `npm run verify:read-budget -- --remote` after first sync. |
+| Jev returns typed answers with absent confidence preserved | The adapter matches Cloudflare's published response shape, but no live call has been made | One request through the AI binding once it is configured. See the retention boundary below. |
+| A real read count on a real mailbox page | Needs a connected mailbox, and no read-accounting script exists in this repo | Add remote read accounting, then measure after the first sync. |
 | Installed PWA on Android | Needs a physical device | Manual install from Chrome. |
+| Live D1 reads fail closed for anonymous callers | A signed session is required before any live (D1) data is served, and the synthetic-fixtures demo stays open; verified only in the Workers test runtime so far | Send an unauthenticated request to the deployed Worker. |
+
+## Not implemented yet
+
+These are gaps, not blocked proofs. The docs must not describe them as merely
+"awaiting credentials".
+
+| Proof | What is missing | Cheapest next step |
+|---|---|---|
+| Better Auth database sessions (the planned design) | A minimal signed-cookie session boundary now gates the live D1 path as a stopgap; Better Auth itself is not wired | Replace the stopgap with Better Auth sessions, then assert server-side token storage. |
+| The reader returns a real message body | The body loader is a stub (`const bodyLoader: BodyLoader = async () => null` in `src/worker.ts`), so a connected mailbox would still render no body | Build the fetch path from a stored grant, behind auth. |
+| Jev produces live classifications in a deployed Worker | Classification needs a Workers AI binding, which is not configured in `wrangler.jsonc` | Add and bind the AI provider, then run one request. |
+| Sync, evaluate, apply, and reconcile run | Only `classify` has a handler; the consumer settles the other kinds without doing the work | Implement each handler behind its own gate. |
+
+## Unresolved: Jev / provider data-retention boundary
+
+Classification sends message content to the configured Jev provider. This
+repository does not settle that provider's data-retention, logging, or
+training-use policy — those are a deployment concern and an open question, not a
+property this repo can assert. The app never persists, logs, or queues a body
+itself, but once a body is handed to the provider, its handling is governed by
+that provider's terms. See
+[THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
 
 ## Known deviations from PLAN-v2
 
 - **Compatibility date is `2026-08-22`,** the newest the bundled workerd
   supports. Raising it requires bumping workerd first; deploy and test must
   agree.
-- **`migrations/0000.sql` is a generated aggregate** of the numbered
-  migrations, because the Workers test runtime has no filesystem. A script
-  fails the build if the two drift.
+- **The aggregate test-schema file is generated** from the numbered migrations,
+  because the Workers test runtime has no filesystem. A script fails the build
+  if the two drift. It sits outside `migrations/` so `wrangler` never applies it
+  as a migration.
 - **Vitest runs on its own config, not the Vite plugin.** Vitest 4 forces
   `resolve.external` onto every environment, which the Cloudflare Vite plugin
   rejects. The dev server keeps the plugin; the tests use the pool directly.
-- **Job handlers are unwired.** The consumer validates envelopes and acks, so
-  the build is honest about what exists: no handler pretends to do work.
+- **Only the `classify` job is wired.** The queue consumer routes `classify`
+  jobs to a real handler; `sync`, `evaluate`, `apply`, and `reconcile` have no
+  handler and are settled as succeeded on delivery, deliberately, rather than
+  retried forever. A settled job is not evidence the work happened.

@@ -1,5 +1,11 @@
 # Setup
 
+> **Status: forward-looking.** The live Gmail path is not enabled yet. The steps
+> below provision infrastructure and a Google OAuth client, but a deployment
+> cannot yet sync or classify real mail. See the deployment status in the
+> [README](../README.md) and [spike-status.md](spike-status.md) for what runs
+> today.
+
 About 20 to 40 minutes, most of it in the Google Cloud console. Do these steps in
 order; step 2 is the one people get wrong and it costs a week of reconnects.
 
@@ -57,7 +63,8 @@ it at all. Once published to In production this is unnecessary.
 
 ## 5. Deploy to Cloudflare
 
-Use the deploy button in the README, or do it by hand:
+This is **not** a one-click deploy, and it does not produce a working
+installation today. If you still want to provision the Cloudflare side by hand:
 
 ```bash
 git clone https://github.com/hwong103/jevmail.git
@@ -80,23 +87,30 @@ npm run db:migrate
 npm run deploy
 ```
 
+Note that `npm run deploy` ships the Worker only. There is no frontend build and
+no `assets` binding in `wrangler.jsonc`, so this does not publish the PWA app
+shell, and the live data path is incomplete regardless.
+
 ## 6. Set the secrets
 
 ```bash
 npx wrangler secret put GOOGLE_CLIENT_ID
 npx wrangler secret put GOOGLE_CLIENT_SECRET
 npx wrangler secret put CREDENTIAL_KEY
+npx wrangler secret put SESSION_SECRET
 ```
 
-Generate the credential key with:
+Generate `CREDENTIAL_KEY` and `SESSION_SECRET` with:
 
 ```bash
 openssl rand -base64 32
 ```
 
-Keep that value safe. It encrypts the stored Gmail refresh token; losing it
-means reconnecting the account. All three values are server-side only and are
-never sent to the browser.
+Keep both values safe. `CREDENTIAL_KEY` encrypts the stored Gmail refresh token;
+losing it means reconnecting the account. `SESSION_SECRET` signs the session
+cookie that gates live (D1) reads, so a missing or rotated value simply forces a
+re-sign-in rather than exposing mail. All four values are server-side only and
+are never sent to the browser.
 
 ## 7. Optional: pre-pin the owner
 
@@ -110,11 +124,12 @@ npx wrangler secret put OWNER_EMAIL
 
 Any other Google identity is then rejected.
 
-## 8. Connect Gmail
+## 8. Connect Gmail (not enabled yet)
 
-Open the app and sign in as the account you want to triage. The first sign-in
-binds the installation. After that the app syncs recent mail, classifies it, and
-files it into trays.
+The live path is not wired end to end, so signing in does not yet sync or
+classify real mail. When that path lands, the first sign-in will bind the
+installation, and the app will sync recent mail, classify it, and file it into
+trays. Today, expect the synthetic fixtures only.
 
 ## Troubleshooting
 
@@ -131,9 +146,11 @@ In production.
 already owns this deployment. If that was you on another account, delete the D1
 database and start over, or set `OWNER_EMAIL` before the first sign-in.
 
-**The app shows fixtures rather than your mail.** No active account row exists
-yet. Complete the Google sign-in, and confirm the migrations were applied to the
-same database the Worker is bound to.
+**The app shows fixtures rather than your mail.** Expected today. The app runs on
+the synthetic fixtures bundled in the repository; the live Gmail path is not
+wired end to end yet, so there is nothing else for it to show. When the live path
+lands it will require an authenticated session and return nothing to anonymous
+callers, so an unauthenticated view will still not expose mail.
 
 **"Connection required" while offline.** Jevmail caches only the app shell. Mail
 is never cached, so offline it has nothing to show rather than showing stale
