@@ -9,6 +9,9 @@
 About 20 to 40 minutes, most of it in the Google Cloud console. Do these steps in
 order; step 2 is the one people get wrong and it costs a week of reconnects.
 
+Or run `scripts/google-setup.sh`, which opens each page, captures the values, and
+writes them to `.dev.vars` and the Worker secrets.
+
 ## 1. Create a Google Cloud project
 
 1. Open the [Cloud Console](https://console.cloud.google.com/) and create a project.

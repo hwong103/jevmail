@@ -93,6 +93,9 @@ on your behalf, so OAuth setup is a manual walkthrough — about 20 to 40 minute
 See [docs/setup.md](docs/setup.md) for the exact clicks, including the callback
 URL to copy.
 
+Or run [`scripts/google-setup.sh`](scripts/google-setup.sh): it opens each page,
+captures the values, and writes them to `.dev.vars` and the Worker secrets.
+
 Every self-hoster would use their **own** Google Cloud project and their **own**
 OAuth client. This repository never operates a shared OAuth app on your behalf,
 and publishing it creates no verification submission for anyone. You would see
