@@ -12,6 +12,10 @@ const TRAY_ORDER: Tray[] = [
   "low_priority",
 ];
 
+// Bounded self-clear attempts per tray visit. A permanently unclassified
+// sibling stops the refresh loop instead of polling forever.
+const PENDING_REFRESH_LIMIT = 5;
+
 // Valid correction targets per question. A correction must always carry a
 // value the schema accepts, so the editor cannot produce an invalid answer.
 const OPTIONS: Record<Question, readonly AnswerDto["value"][]> = {
@@ -191,6 +195,16 @@ function ExternalIcon() {
   );
 }
 
+function InfoIcon() {
+  return (
+    <Icon width={14} height={14}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v5" />
+      <path d="M12 7.6h.01" />
+    </Icon>
+  );
+}
+
 function StarIcon({ filled }: { filled: boolean }) {
   return (
     <Icon className={`star${filled ? " star--on" : ""}`} fill={filled ? "currentColor" : "none"}>
@@ -363,10 +377,11 @@ function Reader({
       </div>
 
       {item.pendingInThread > 0 && (
-        <div className="banner">
+        <p className="reader-pending">
+          <InfoIcon />
           {item.pendingInThread} newer message{item.pendingInThread === 1 ? "" : "s"} in this
-          thread {item.pendingInThread === 1 ? "has" : "have"} not been classified yet.
-        </div>
+          thread {item.pendingInThread === 1 ? "is" : "are"} still being classified.
+        </p>
       )}
 
       {item.quality === "missing_body" && (
@@ -460,6 +475,54 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const reloadTimer = useRef<number | null>(null);
 
+  // The classification cron -> queue path is momentary, but the list is only
+  // fetched on tray change, so a reader note about unclassified siblings would
+  // otherwise sit stale. When the sync poll next reports idle and the page
+  // still has such siblings, re-fetch the tray once (bounded per visit).
+  const pageRef = useRef<MessagePage | null>(null);
+  const trayRef = useRef<Tray>(tray);
+  const pendingAttempts = useRef(0);
+  const pendingRefreshing = useRef(false);
+
+  useEffect(() => {
+    pageRef.current = page;
+  }, [page]);
+
+  useEffect(() => {
+    trayRef.current = tray;
+    // A new tray visit earns a fresh, still-bounded attempt budget.
+    pendingAttempts.current = 0;
+  }, [tray]);
+
+  const refreshIfPending = useCallback(() => {
+    // Never spend a read on a hidden tab.
+    if (document.visibilityState !== "visible") return;
+    if (pendingRefreshing.current) return;
+    const current = pageRef.current;
+    // Steady state (nothing pending) costs nothing: no pending item, no fetch.
+    if (!current?.messages.some((item) => item.pendingInThread > 0)) return;
+    if (pendingAttempts.current >= PENDING_REFRESH_LIMIT) return;
+    pendingAttempts.current += 1;
+    pendingRefreshing.current = true;
+    const requestedTray = trayRef.current;
+    listMessages(requestedTray, null)
+      .then((refreshed) => {
+        // Discard a stale response if the user changed trays mid-flight.
+        if (trayRef.current !== requestedTray) return;
+        // Rows keep their gmailMessageId keys, so the list does not flash and,
+        // because the open message keeps its id, the reader body and scroll
+        // position are preserved.
+        setPage(refreshed);
+      })
+      .catch(() => {
+        // A failed refresh is not worth surfacing; the next idle poll retries
+        // within the attempt budget.
+      })
+      .finally(() => {
+        pendingRefreshing.current = false;
+      });
+  }, []);
+
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
@@ -474,7 +537,12 @@ export function App() {
     const controller = new AbortController();
     const poll = () => {
       fetchSyncStatus(controller.signal)
-        .then((status) => setSyncLabel(status.state === "idle" ? "synced" : status.state))
+        .then((status) => {
+          setSyncLabel(status.state === "idle" ? "synced" : status.state);
+          // At most one refresh per idle report; the guard inside the callback
+          // also caps this at PENDING_REFRESH_LIMIT per tray visit.
+          if (status.state === "idle") refreshIfPending();
+        })
         .catch(() => setSyncLabel("offline"));
     };
     poll();

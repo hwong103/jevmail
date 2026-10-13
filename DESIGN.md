@@ -36,7 +36,9 @@ uses `--nav-active-fg`, a darker/lighter tint of the accent chosen to clear
 all ≥4.5:1 against white.
 
 Warning/banner tokens (`--warn-bg`, `--warn-border`, `--warn-text`) carry the
-existing Jevmail banners (pending thread, missing body, load errors).
+remaining Jevmail banners (missing body, load errors). The "still being
+classified" thread status is a muted inline note under the reader sender row,
+not a warning banner.
 
 ## Type
 
@@ -89,7 +91,8 @@ is no left-border accent stripe anywhere.
   border), and only then a native, collapsed-by-default "Why this landed here"
   disclosure behind a hairline. Expanding it reveals the reasons, the Jev
   answers, and the correction editor; opening while correcting is automatic.
-  The tray chip and the coverage/error banners are restyled, not removed.
+  The tray chip and the coverage/error banners are restyled, not removed; the
+  "still being classified" status is a muted inline note under the sender row.
 - **Responsive**: the rail becomes an overlay drawer at ≤900px; the list is full
   width and the reader takes over when a message is open. No horizontal scroll
   at 390px.

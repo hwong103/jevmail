@@ -635,6 +635,22 @@ input {
   font-variant-numeric: tabular-nums;
 }
 
+/* A passing status, not an alarm: the classification of a newer sibling in the
+   thread is still in flight. No fill, no border, no warning colour. */
+.reader-pending {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -8px 0 16px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.reader-pending svg {
+  flex: none;
+}
+
 /* The Jev classification is a native disclosure below the message: a
    collapsed "Why this landed here" summary sits over the reasons, the answers,
    and the correction editor. A hairline keeps it reading as a secondary
