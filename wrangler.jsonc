@@ -13,11 +13,15 @@
   },
   // Workers AI. The classify job runs Cloudflare's `typesafe/jev` model through
   // this binding; without it a classify job parks as blocked_auth rather than
-  // guessing. Workers AI cannot be emulated locally, so a bare binding is used.
-  // `remote: true` was removed because it forced the test pool to open a remote
-  // proxy session and require CLOUDFLARE_API_TOKEN, breaking credential-free CI.
-  // Exercising live AI from local dev needs credentials via `wrangler dev
-  // --remote` (or a deploy); local tests do not call the binding.
+  // guessing. This binding stays here so deploys are complete.
+  //
+  // Workers AI has no local simulator, so `@cloudflare/vitest-pool-workers`
+  // would otherwise treat this binding as remote and open a remote proxy
+  // session requiring CLOUDFLARE_API_TOKEN — breaking credential-free CI.
+  // `vitest.config.ts` sets the pool's documented `remoteBindings: false` to
+  // opt out; adding `remote: true` here would defeat that. Local tests never
+  // call this binding, so they stay credential-free. Exercising live AI from
+  // local dev needs credentials via `wrangler dev --remote` (or a deploy).
   "ai": {
     "binding": "AI"
   },

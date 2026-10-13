@@ -10,6 +10,11 @@ export default defineConfig({
     cloudflareTest({
       main: "./src/worker.ts",
       wrangler: { configPath: "./wrangler.jsonc" },
+      // Opt out of the pool's remote proxy session. Workers AI's `AI` binding
+      // has no local simulator, so the pool otherwise treats it as remote and
+      // demands a CLOUDFLARE_API_TOKEN, breaking credential-free CI. Tests
+      // never call the binding, and production keeps it via wrangler.jsonc.
+      remoteBindings: false,
       // A real deploy supplies SESSION_SECRET as a secret. Tests need a fixed
       // value so a valid session can be minted and verified.
       miniflare: { bindings: { SESSION_SECRET: "test-session-secret" } },
