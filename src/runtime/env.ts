@@ -1,15 +1,19 @@
 // Environment resolution. Fail-closed on anything security-relevant: a missing
 // secret disables the feature rather than silently degrading it.
 
+import type { AiBinding } from "../server/classification/jev";
+
 export interface Env {
   DB: D1Database;
   JOB_QUEUE: Queue<unknown>;
+  /** Workers AI binding. The real Jev classifier runs through this. */
+  AI?: AiBinding;
   SESSION_SECRET?: string;
   CREDENTIAL_KEY?: string;
   CREDENTIAL_KEY_VERSION?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
-  JEV_API_KEY?: string;
+  /** Only the literal "fixture" is honoured; it opts into the local classifier. */
   JEV_PROVIDER?: string;
   OWNER_EMAIL?: string;
   AUTH_SECRET?: string;

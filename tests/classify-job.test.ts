@@ -5,13 +5,30 @@ import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createFixturePort } from "../src/server/classification/fixture";
 import type { ClassificationPort } from "../src/server/classification/classify";
+import { JevClassificationPort } from "../src/server/classification/jev";
 import type { GmailMessage } from "../src/server/gmail/normalize";
 import { handleClassify, type ClassifyDeps } from "../src/server/jobs/classify";
+import { classifyDeps } from "../src/server/jobs/consumer";
+import { buildClassificationPort } from "../src/server/jobs/deps";
+import type { Env } from "../src/runtime/env";
 import { textMessage } from "./fixtures/gmail";
 import { applyMigrations, seedAccount } from "./helpers/migrations";
 
 const db = (env as unknown as { DB: D1Database }).DB;
 const ACCOUNT = "a1";
+
+// A literal `typesafe/jev` response, matching the documented wire shape.
+const DOC_RESPONSE = {
+  model: "jev-1.13.0",
+  answers: {
+    needsReply: { type: "noul", noul: 0.95 },
+    category: { type: "choice", choice: "work", confidence: 0.8 },
+    needsAction: { type: "noul", noul: 0.08 },
+    urgency: { type: "score", score: 1.04, confidence: 0.94 },
+    importance: { type: "score", score: 0, confidence: 0.5 },
+    senderType: { type: "choice", choice: "person", confidence: 0.77 },
+  },
+};
 
 async function insertMessage(revision = 0): Promise<void> {
   await db
@@ -25,6 +42,43 @@ async function insertMessage(revision = 0): Promise<void> {
 async function classificationCount(): Promise<number> {
   const row = await db.prepare("SELECT COUNT(*) AS n FROM classifications").first<{ n: number }>();
   return row?.n ?? 0;
+}
+
+async function inputHashOf(id: string): Promise<string> {
+  const row = await db
+    .prepare("SELECT input_hash FROM classifications WHERE id = ?")
+    .bind(id)
+    .first<{ input_hash: string }>();
+  if (!row) throw new Error(`no classification ${id}`);
+  return row.input_hash;
+}
+
+/** A message fixture whose From/Subject headers match its payload. */
+function messageWith(subject: string, body: string): GmailMessage {
+  const { message, headers } = textMessage({
+    id: "m1",
+    from: "billing@shop.example",
+    subject,
+    body,
+  });
+  return { ...message, payload: { ...(message.payload ?? {}), headers } } as GmailMessage;
+}
+
+/** A leased classify job, so the write fence has a lease token to check. */
+async function insertLeasedJob(jobId: string, leaseToken: string): Promise<void> {
+  await db
+    .prepare(
+      "INSERT INTO jobs (id, account_id, payload, dedupe_key, state, attempts, available_at, lease_token, lease_expires_at, created_at) VALUES (?, ?, ?, ?, 'leased', 1, 0, ?, ?, 0)",
+    )
+    .bind(
+      jobId,
+      ACCOUNT,
+      JSON.stringify({ kind: "classify", messageId: "m1", expectedMessageRevision: 0 }),
+      `${ACCOUNT}:classify:m1:${jobId}`,
+      leaseToken,
+      Date.now() + 60_000,
+    )
+    .run();
 }
 
 function deps(overrides: Partial<ClassifyDeps> = {}): ClassifyDeps {
@@ -149,19 +203,173 @@ describe("handleClassify", () => {
     expect(await classificationCount()).toBe(0);
   });
 
-  it("records a provider failure as a retryable failure", async () => {
+  it("returns a transient provider failure as retryable with no stored row", async () => {
     await insertMessage(0);
     const failingPort: ClassificationPort = {
       classify: () => Promise.reject(new Error("timeout")),
     };
-    const result = await handleClassify(deps({ port: failingPort }), "m1", 0);
-    const row = await db
-      .prepare("SELECT status, answers FROM classifications WHERE id = ?")
-      .bind(result.classificationId)
-      .first<{ status: string; answers: string }>();
-    expect(row?.status).toBe("review");
-    expect(JSON.parse(row?.answers ?? "{}")).toMatchObject({
-      category: { state: "unknown", reason: "provider_error" },
+    const result = await handleClassify(deps({ port: failingPort }), "m1", 0, {
+      jobId: "j",
+      leaseToken: "t",
     });
+    // A transient failure is not a classification: nothing is stored, so a
+    // later attempt with the same input is not suppressed by a "failed" row.
+    expect(result.status).toBe("retryable");
+    expect(await classificationCount()).toBe(0);
+  });
+
+  it("persists the provider's real model and prompt versions, not literals", async () => {
+    await insertMessage(0);
+    const versioned: ClassificationPort = {
+      async classify() {
+        return {
+          modelVersion: "jev-9.9.9",
+          promptVersion: 7,
+          schemaVersion: 1,
+          raw: {
+            category: "work",
+            categoryConfidence: 0.9,
+            needsReply: true,
+            needsReplyConfidence: 0.9,
+            needsAction: false,
+            needsActionConfidence: 0.9,
+            urgency: 3,
+            urgencyConfidence: 0.8,
+            importance: 3,
+            importanceConfidence: 0.8,
+            senderType: "person",
+            senderTypeConfidence: 0.9,
+          },
+        };
+      },
+    };
+    const result = await handleClassify(deps({ port: versioned }), "m1", 0);
+    const row = await db
+      .prepare("SELECT model_version, prompt_version FROM classifications WHERE id = ?")
+      .bind(result.classificationId)
+      .first<{ model_version: string; prompt_version: number }>();
+    expect(row?.model_version).toBe("jev-9.9.9");
+    expect(row?.prompt_version).toBe(7);
+  });
+
+  it("classifies with the AI binding and stores the response's model version", async () => {
+    await insertMessage(0);
+    const port = buildClassificationPort({
+      AI: { run: async () => DOC_RESPONSE },
+    } as unknown as Env);
+    expect(port).not.toBeNull();
+    const result = await handleClassify(deps({ port: port as ClassificationPort }), "m1", 0);
+    const row = await db
+      .prepare("SELECT model_version FROM classifications WHERE id = ?")
+      .bind(result.classificationId)
+      .first<{ model_version: string }>();
+    expect(row?.model_version).toBe("jev-1.13.0");
+  });
+
+  it("does not write when the lease is reclaimed mid-classification", async () => {
+    await insertMessage(0);
+    await insertLeasedJob("jv-lease", "old");
+    // Another worker reclaims the lease while the model call is in flight.
+    const port: ClassificationPort = {
+      async classify(normalized) {
+        await db.prepare("UPDATE jobs SET lease_token = 'reclaimed' WHERE id = 'jv-lease'").run();
+        return createFixturePort().classify(normalized);
+      },
+    };
+    const result = await handleClassify(deps({ port }), "m1", 0, {
+      jobId: "jv-lease",
+      leaseToken: "old",
+    });
+    expect(result.status).toBe("stale");
+    expect(await classificationCount()).toBe(0);
+  });
+
+  it("does not overwrite a newer revision that lands mid-classification", async () => {
+    await insertMessage(0);
+    await insertLeasedJob("jv-rev", "live");
+    const port: ClassificationPort = {
+      async classify(normalized) {
+        // A newer revision is classified by another worker while this one runs.
+        await db.prepare("UPDATE messages SET revision = 1 WHERE id = 'm1'").run();
+        await db
+          .prepare(
+            "INSERT INTO classifications (id, account_id, gmail_message_id, gmail_thread_id, input_hash, thread_context_hash, input_quality, model_version, prompt_version, schema_version, answers, status, supersedes_id, created_at) VALUES ('newer', ?, 'm1', 't1', 'newer-hash', 'tc', 'complete', 'm', 1, 1, '{}', 'complete', NULL, ?)",
+          )
+          .bind(ACCOUNT, Date.now())
+          .run();
+        return createFixturePort().classify(normalized);
+      },
+    };
+    const result = await handleClassify(deps({ port }), "m1", 0, {
+      jobId: "jv-rev",
+      leaseToken: "live",
+    });
+    expect(result.status).toBe("stale");
+    // The newer row is untouched: still complete, not superseded.
+    const rows = await db
+      .prepare("SELECT id, input_hash, status FROM classifications")
+      .all<{ id: string; input_hash: string; status: string }>();
+    expect(rows.results).toHaveLength(1);
+    expect(rows.results[0]).toMatchObject({
+      id: "newer",
+      input_hash: "newer-hash",
+      status: "complete",
+    });
+  });
+
+  it("returns to A as the current row for an A -> B -> A input sequence", async () => {
+    await insertMessage(0);
+    const A = messageWith("Your order receipt", "Thanks for your purchase. Your invoice is ready.");
+    const B = messageWith("Weekly team update", "Here are the notes from the planning meeting.");
+
+    const first = await handleClassify(deps({ fetchMessage: async () => A }), "m1", 0);
+    expect(first.status).toBe("stored");
+    const aHash = await inputHashOf(first.classificationId as string);
+
+    await db.prepare("UPDATE messages SET revision = 1 WHERE id = 'm1'").run();
+    const second = await handleClassify(deps({ fetchMessage: async () => B }), "m1", 1);
+    expect(second.status).toBe("stored");
+    expect(await inputHashOf(second.classificationId as string)).not.toBe(aHash);
+
+    // A returns at a new revision. The stale A history must not be reused: A is
+    // stored as the current row again.
+    await db.prepare("UPDATE messages SET revision = 2 WHERE id = 'm1'").run();
+    const third = await handleClassify(deps({ fetchMessage: async () => A }), "m1", 2);
+    expect(third.status).toBe("stored");
+
+    const current = await db
+      .prepare(
+        "SELECT input_hash FROM classifications WHERE account_id = ? AND gmail_message_id = 'm1' AND status NOT IN ('stale', 'failed')",
+      )
+      .bind(ACCOUNT)
+      .all<{ input_hash: string }>();
+    expect(current.results).toHaveLength(1);
+    expect(current.results[0]?.input_hash).toBe(aHash);
+  });
+});
+
+describe("provider selection", () => {
+  beforeEach(async () => {
+    await applyMigrations(db);
+    await seedAccount(db);
+  });
+
+  it("uses the fixture provider only on an explicit opt-in and prefers the AI binding", () => {
+    expect(buildClassificationPort({} as unknown as Env)).toBeNull();
+    expect(
+      buildClassificationPort({ JEV_PROVIDER: "fixture" } as unknown as Env),
+    ).not.toBeNull();
+    expect(
+      buildClassificationPort({
+        AI: { run: async () => ({}) },
+        JEV_PROVIDER: "fixture",
+      } as unknown as Env),
+    ).toBeInstanceOf(JevClassificationPort);
+  });
+
+  it("parks a classify job only when truly unconfigured", async () => {
+    // The account exists, but with no AI binding and no Gmail config there is no
+    // provider and no fetcher, so the job parks rather than guessing.
+    expect(await classifyDeps({ DB: db } as unknown as Env)).toBeNull();
   });
 });

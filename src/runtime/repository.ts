@@ -13,6 +13,12 @@ import type { Env } from "./env";
 
 export type BodyLoader = (gmailMessageId: string) => Promise<MessageBody | null>;
 
+/**
+ * Builds the body loader once a connected account is known. The loader is built
+ * lazily by the caller, so selecting a repository never reaches Gmail.
+ */
+export type BodyLoaderFactory = (accountId: string) => BodyLoader;
+
 export interface SelectedRepository {
   repository: MailRepository;
   accountId: string | null;
@@ -21,7 +27,7 @@ export interface SelectedRepository {
 
 export async function selectRepository(
   env: Env,
-  bodyLoader: BodyLoader,
+  bodyLoaderFactory: BodyLoaderFactory,
 ): Promise<SelectedRepository> {
   if (!env.DB) {
     return { repository: new FixtureMailRepository(), accountId: null, source: "fixtures" };
@@ -42,7 +48,7 @@ export async function selectRepository(
     return { repository: new FixtureMailRepository(), accountId: null, source: "fixtures" };
   }
   return {
-    repository: new D1MailRepository(env.DB, row.id, bodyLoader),
+    repository: new D1MailRepository(env.DB, row.id, bodyLoaderFactory(row.id)),
     accountId: row.id,
     source: "d1",
   };

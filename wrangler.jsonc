@@ -11,6 +11,14 @@
   "observability": {
     "enabled": true
   },
+  // Workers AI. The classify job runs Cloudflare's `typesafe/jev` model through
+  // this binding; without it a classify job parks as blocked_auth rather than
+  // guessing. Workers AI has no local emulation, so the binding is remote by
+  // definition; stating it suppresses the local-dev usage warning.
+  "ai": {
+    "binding": "AI",
+    "remote": true
+  },
   "d1_databases": [
     {
       // Bound by name. A deploy script resolves the real ID per installation.
@@ -33,6 +41,11 @@
         "max_batch_size": 5,
         "max_batch_timeout": 5,
         "max_retries": 5,
+        // Seconds between redeliveries. Must exceed JOB_LEASE_MS (120s) in
+        // src/server/jobs/consumer.ts, or a retry that loses the claim to a
+        // crashed winner's live lease can burn all retries and dead-letter the
+        // job before the lease expires, stranding it.
+        "retry_delay": 130,
         "dead_letter_queue": "jevmail-jobs-dlq"
       }
     ]
@@ -45,6 +58,9 @@
     // Optional escape hatch. Unset by default: whoever signs in first binds the
     // installation. Setting it pre-pins the principal and rejects other logins.
     // OWNER_EMAIL: "you@example.com",
-    "JEV_PROVIDER": "vercel-gateway"
+    // Optional. Only the literal "fixture" is honoured: it swaps in the
+    // deterministic local classifier instead of Workers AI. Any other value (or
+    // unset) uses the AI binding above.
+    // JEV_PROVIDER: "fixture"
   }
 }

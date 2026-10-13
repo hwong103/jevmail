@@ -2,10 +2,12 @@
 // modes that must not be mistaken for transient ones.
 
 import { env } from "cloudflare:test";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { applyMigrations } from "./helpers/migrations";
 import { bindAccount, verifyAccountIdentity } from "../src/server/auth/bind";
+import { buildAccessTokenProvider } from "../src/server/auth/credentials";
 import { OAUTH_SCOPES, authorizationUrl } from "../src/server/auth/google";
+import { importCredentialKey } from "../src/runtime/crypto";
 
 const db = (env as unknown as { DB: D1Database }).DB;
 
@@ -134,5 +136,95 @@ describe("authorizationUrl", () => {
     expect(OAUTH_SCOPES).toEqual(["https://www.googleapis.com/auth/gmail.readonly"]);
     expect(OAUTH_SCOPES.join(" ")).not.toContain("modify");
     expect(OAUTH_SCOPES.join(" ")).not.toContain("send");
+  });
+});
+
+describe("buildAccessTokenProvider", () => {
+  // A fixed 32-byte key, base64url. Matches what CREDENTIAL_KEY decodes to.
+  const rawKey = Buffer.from(new Uint8Array(32).fill(7)).toString("base64url");
+  const config = { clientId: "cid", clientSecret: "secret", redirectUri: "" };
+
+  beforeEach(async () => {
+    await applyMigrations(db);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  async function seedCredential(refreshToken: string): Promise<void> {
+    const key = await importCredentialKey(rawKey);
+    const iv = new Uint8Array(12).fill(3);
+    const encrypted = await crypto.subtle.encrypt(
+      {
+        name: "AES-GCM",
+        iv,
+        additionalData: new TextEncoder().encode("jevmail:credential:a1:v1"),
+      },
+      key,
+      new TextEncoder().encode(refreshToken),
+    );
+    const ciphertext = Buffer.from(new Uint8Array(encrypted)).toString("base64url");
+    const ivEncoded = Buffer.from(iv).toString("base64url");
+    // The real write path (bindAccount / the OAuth callback) stores the iv in
+    // `credential_iv`. Seed that same column so the read is exercised for real.
+    await db
+      .prepare(
+        "INSERT OR IGNORE INTO principals (id, google_sub, email, bound_at, is_owner) VALUES ('p1', 'sub-1', 'a@example.com', 1, 1)",
+      )
+      .run();
+    await db
+      .prepare(
+        "INSERT OR IGNORE INTO accounts (id, principal_id, gmail_address, granted_scopes, status, created_at) VALUES ('a1', 'p1', 'a@example.com', '[]', 'active', 1)",
+      )
+      .run();
+    await db
+      .prepare(
+        "UPDATE accounts SET encrypted_refresh_token = ?, credential_iv = ?, key_version = 1 WHERE id = 'a1'",
+      )
+      .bind(ciphertext, ivEncoded)
+      .run();
+  }
+
+  it("resolves a stored credential from credential_iv without a SQL error", async () => {
+    await seedCredential("refresh-token-a1");
+
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ access_token: "access-a1", expires_in: 3600 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const provider = buildAccessTokenProvider(db, config, rawKey, 1);
+    const token = await provider.accessTokenFor("a1");
+
+    expect(token).toBe("access-a1");
+    // The proof the read hit the right column: the sealed refresh token came
+    // back out and was sent to the token endpoint.
+    const [, init] = fetchMock.mock.calls[0] as unknown as [unknown, RequestInit];
+    expect(String(init.body)).toContain("refresh_token=refresh-token-a1");
+  });
+
+  it("parks the account when the grant is no longer valid", async () => {
+    await seedCredential("refresh-token-a1");
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ error: "invalid_grant" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+
+    const provider = buildAccessTokenProvider(db, config, rawKey, 1);
+    await expect(provider.accessTokenFor("a1")).rejects.toThrow(/reconnect/i);
+    const row = await db
+      .prepare("SELECT status FROM accounts WHERE id = 'a1'")
+      .first<{ status: string }>();
+    expect(row?.status).toBe("reauth_required");
   });
 });

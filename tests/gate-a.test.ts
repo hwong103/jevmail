@@ -115,6 +115,10 @@ describe("worker boot and auth rejection", () => {
 
 describe("cron on a fresh installation", () => {
   it("is a harmless no-op when no mailbox is connected", async () => {
+    // The pool shares one database across this file's tests, and the query-plan
+    // suite above seeds an account. Re-apply the schema so this test is the
+    // fresh-install case it claims to be.
+    await applyMigrations(db);
     const result = await runSync({ DB: db } as never);
     expect(result.status).toBe("skipped");
     expect(result.reason).toBe("no_account_connected");

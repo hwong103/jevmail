@@ -39,12 +39,12 @@ export function buildAccessTokenProvider(
   async function resolve(accountId: string): Promise<string> {
     const row = await db
       .prepare(
-        "SELECT encrypted_refresh_token, iv, key_version, status FROM accounts WHERE id = ?",
+        "SELECT encrypted_refresh_token, credential_iv, key_version, status FROM accounts WHERE id = ?",
       )
       .bind(accountId)
       .first<{
         encrypted_refresh_token: string | null;
-        iv: string | null;
+        credential_iv: string | null;
         key_version: number | null;
         status: string;
       }>();
@@ -54,7 +54,7 @@ export function buildAccessTokenProvider(
 
     const stored: StoredCredential = {
       encryptedRefreshToken: row.encrypted_refresh_token,
-      iv: row.iv ?? "",
+      iv: row.credential_iv ?? "",
       keyVersion: row.key_version ?? keyVersion,
     };
     const keyring = await keyringPromise;

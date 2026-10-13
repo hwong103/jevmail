@@ -11,5 +11,6 @@ SESSION_SECRET=
 CREDENTIAL_KEY=
 CREDENTIAL_KEY_VERSION=1
 
-# Jev provider key, used server-side only.
-JEV_API_KEY=
+# Jev provider is fixture-only for local dev. The real provider is the Workers
+# AI binding declared in wrangler.jsonc, so no API key is read here.
+# JEV_PROVIDER=fixture

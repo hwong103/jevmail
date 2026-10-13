@@ -95,6 +95,26 @@ describe("interpret", () => {
     expect(result.raw.urgency).toBeUndefined();
   });
 
+  it("keeps boolean confidence absent when a noul has no yes-probability", () => {
+    const result = interpret({
+      model: "jev-1.13.0",
+      answers: {
+        needsReply: { type: "noul" },
+        needsAction: { type: "noul", noul: undefined },
+      },
+    });
+    // Absent probability: no derived value and no invented confidence.
+    expect(result.raw.needsReply).toBeUndefined();
+    expect(result.raw.needsReplyConfidence).toBeUndefined();
+    expect(result.raw.needsAction).toBeUndefined();
+    expect(result.raw.needsActionConfidence).toBeUndefined();
+    // Through the normaliser it is `unknown` with no confidence field, never a
+    // value carrying a 0 or NaN confidence.
+    const needsReply = normalizeRaw(result).answers.needsReply;
+    expect(needsReply.state).toBe("unknown");
+    expect(needsReply).not.toHaveProperty("confidence");
+  });
+
   it("rejects an out-of-range confidence instead of clamping it", () => {
     const result = interpret({
       answers: { category: { type: "choice", choice: "work", confidence: 1.8 } },

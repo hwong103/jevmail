@@ -31,7 +31,15 @@ export interface ClassifyOutcome {
   answers: Answers;
   status: "complete" | "review" | "failed";
   reasons: string[];
+  /** The provider's own model identifier, threaded through so the stored row
+   * records what actually answered rather than a literal. */
+  modelVersion: string;
+  promptVersion: number;
 }
+
+/** Recorded when no model answered (missing body) or the provider threw. */
+const NO_MODEL_VERSION = "none";
+const NO_PROMPT_VERSION = 0;
 
 function toNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -127,6 +135,8 @@ export function normalizeRaw(raw: RawClassification): ClassifyOutcome {
     answers,
     status: reasons.length > 0 ? "review" : "complete",
     reasons,
+    modelVersion: raw.modelVersion,
+    promptVersion: raw.promptVersion,
   };
 }
 
@@ -139,6 +149,8 @@ export async function classifyMessage(
       answers: emptyAnswers("missing"),
       status: "review",
       reasons: ["Message body unavailable; classification was not attempted."],
+      modelVersion: NO_MODEL_VERSION,
+      promptVersion: NO_PROMPT_VERSION,
     };
   }
   try {
@@ -148,6 +160,8 @@ export async function classifyMessage(
       answers: emptyAnswers("provider_error"),
       status: "failed",
       reasons: [`Provider error: ${error instanceof Error ? error.name : "unknown"}`],
+      modelVersion: NO_MODEL_VERSION,
+      promptVersion: NO_PROMPT_VERSION,
     };
   }
 }

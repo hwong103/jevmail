@@ -3,7 +3,20 @@
 
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
-import { dedupeKeyFor, envelopeFor, type JobSpec, type MessageUpsert } from "../src/db/outbox";
+import {
+  dedupeKeyFor,
+  envelopeFor,
+  publishPending,
+  type JobSpec,
+  type MessageUpsert,
+} from "../src/db/outbox";
+
+class FakeQueue {
+  readonly sent: unknown[] = [];
+  async send(body: unknown): Promise<void> {
+    this.sent.push(body);
+  }
+}
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS jobs (
@@ -192,5 +205,61 @@ describe("envelope and dedupe", () => {
     const first = dedupeKeyFor("a1", { kind: "classify", messageId: "m1", expectedMessageRevision: 0 });
     const second = dedupeKeyFor("a1", { kind: "classify", messageId: "m1", expectedMessageRevision: 1 });
     expect(first).not.toBe(second);
+  });
+});
+
+describe("publishPending lease recovery", () => {
+  let db: D1Database;
+
+  beforeEach(async () => {
+    db = await freshDb();
+    await resetSchema(db);
+    await db
+      .prepare(
+        "INSERT INTO jobs (id, account_id, payload, dedupe_key, state, attempts, available_at, created_at) VALUES ('j1', 'a1', '{}', 'a1:k', 'ready', 0, 0, 0)",
+      )
+      .run();
+  });
+
+  it("reclaims a row stranded in publishing once its lease expires", async () => {
+    // A publisher crashed after claiming (pending -> publishing) but before the
+    // send, leaving a lease that has since expired.
+    await db
+      .prepare(
+        "INSERT INTO outbox (id, job_id, state, attempts, available_at, lease_token, lease_expires_at) VALUES ('o1', 'j1', 'publishing', 1, 0, 'dead-lease', 1000)",
+      )
+      .run();
+    const queue = new FakeQueue();
+
+    const receipt = await publishPending(db, queue as unknown as Queue<unknown>, 10, 5000);
+
+    expect(receipt.published).toBe(1);
+    expect(receipt.failed).toBe(0);
+    expect(queue.sent).toEqual([{ version: 1, jobId: "j1" }]);
+    const row = await db
+      .prepare("SELECT state, lease_token, published_at FROM outbox WHERE id = 'o1'")
+      .first<{ state: string; lease_token: string | null; published_at: number | null }>();
+    expect(row?.state).toBe("published");
+    expect(row?.lease_token).toBeNull();
+    expect(row?.published_at).not.toBeNull();
+  });
+
+  it("does not steal a publishing row whose lease is still live", async () => {
+    await db
+      .prepare(
+        "INSERT INTO outbox (id, job_id, state, attempts, available_at, lease_token, lease_expires_at) VALUES ('o2', 'j1', 'publishing', 1, 0, 'live-lease', 100000)",
+      )
+      .run();
+    const queue = new FakeQueue();
+
+    const receipt = await publishPending(db, queue as unknown as Queue<unknown>, 10, 5000);
+
+    expect(receipt.published).toBe(0);
+    expect(queue.sent).toEqual([]);
+    const row = await db
+      .prepare("SELECT state, lease_token FROM outbox WHERE id = 'o2'")
+      .first<{ state: string; lease_token: string | null }>();
+    expect(row?.state).toBe("publishing");
+    expect(row?.lease_token).toBe("live-lease");
   });
 });

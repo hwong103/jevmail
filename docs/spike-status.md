@@ -1,7 +1,7 @@
 # Gate A spike status
 
 Verified on 2026-09-28, locally, in the Workers runtime via
-`@cloudflare/vitest-pool-workers`. `npm test` runs the full suite — 100+ tests
+`@cloudflare/vitest-pool-workers`. `npm test` runs the full suite — 145 tests
 across the test files — in that runtime. The read-only vertical slice is
 complete against fixtures; the proofs below are separated by how far they have
 actually been exercised.
@@ -72,8 +72,12 @@ checkout. They are **not** faked and **not** marked done.
 | Production-status OAuth grant survives a Worker restart | Needs a Google Cloud project and an authorized mailbox | Publish the consent screen to `In production`, then grant `gmail.readonly`. |
 | No Google token in any browser response, cookie, log, or bundle | Same | Inspect a real session once the first grant completes. |
 | A real scheduled invocation updates a checkpoint | Requires a deployed Worker | After the first deploy, watch the cron log. |
+| Sync driver runs a real pass | `runSync` now loads the active account, builds a Gmail adapter from the stored grant, verifies identity, polls `history.list`, and publishes the outbox — but no real mailbox has driven it | Run one scheduled invocation against a connected mailbox. |
+| Outbox publish sends and stays idempotent | `commitSyncPage` (messages + jobs + outbox + cursor in one D1 batch) and `publishPending` (ID-only envelopes) are implemented and unit-tested | Watch one real publish sweep and confirm a duplicate does not double-send. |
+| Reader returns a real message body | The `GET /api/messages/:id/body` loader now fetches from Gmail on demand, never persists the body, 404s when absent, and degrades to an `unsupported` body on failure — no live fetch has run | Load a real message body once a mailbox is connected. |
+| Classification uses the configured AI binding | An `ai` binding (Workers AI, remote) is now declared in `wrangler.jsonc`, and real `modelVersion`/`promptVersion` are stored rather than hard-coded literals — but the binding has never been called | Send one classify request against the deployed Worker. |
 | A queue job delivered twice completes once in production | Requires a deployed Worker and a real queue | Trigger a duplicate delivery against the deployed queue. |
-| Jev returns typed answers with absent confidence preserved | The adapter matches Cloudflare's published response shape, but no live call has been made | One request through the AI binding once it is configured. See the retention boundary below. |
+| Jev returns typed answers with absent confidence preserved | The adapter matches Cloudflare's published response shape, but no live call has been made through the now-configured AI binding | One request through the AI binding. See the retention boundary below. |
 | A real read count on a real mailbox page | Needs a connected mailbox, and no read-accounting script exists in this repo | Add remote read accounting, then measure after the first sync. |
 | Installed PWA on Android | Needs a physical device | Manual install from Chrome. |
 | Live D1 reads fail closed for anonymous callers | A signed session is required before any live (D1) data is served, and the synthetic-fixtures demo stays open; verified only in the Workers test runtime so far | Send an unauthenticated request to the deployed Worker. |
@@ -86,9 +90,7 @@ These are gaps, not blocked proofs. The docs must not describe them as merely
 | Proof | What is missing | Cheapest next step |
 |---|---|---|
 | Better Auth database sessions (the planned design) | A minimal signed-cookie session boundary now gates the live D1 path as a stopgap; Better Auth itself is not wired | Replace the stopgap with Better Auth sessions, then assert server-side token storage. |
-| The reader returns a real message body | The body loader is a stub (`const bodyLoader: BodyLoader = async () => null` in `src/worker.ts`), so a connected mailbox would still render no body | Build the fetch path from a stored grant, behind auth. |
-| Jev produces live classifications in a deployed Worker | Classification needs a Workers AI binding, which is not configured in `wrangler.jsonc` | Add and bind the AI provider, then run one request. |
-| Sync, evaluate, apply, and reconcile run | Only `classify` has a handler; the consumer settles the other kinds without doing the work | Implement each handler behind its own gate. |
+| Evaluate, apply, and reconcile run | Only `classify` has a real queue handler; the consumer settles the other job kinds without doing the work (`sync` now has a real cron driver, but its queue job kind is still settled) | Implement each handler behind its own gate. |
 
 ## Unresolved: Jev / provider data-retention boundary
 
@@ -116,3 +118,11 @@ that provider's terms. See
   jobs to a real handler; `sync`, `evaluate`, `apply`, and `reconcile` have no
   handler and are settled as succeeded on delivery, deliberately, rather than
   retried forever. A settled job is not evidence the work happened.
+
+## Known limitations (prototype)
+
+The Jev/AI classification call has no application-level timeout, so a slow or
+hanging provider response and the duplicate spend it can cause are unbounded by
+the app. Stored results remain protected: the classification write is idempotent
+and settlement is lease-token fenced, so a stale worker that wakes after its
+lease was reclaimed cannot clobber the row.

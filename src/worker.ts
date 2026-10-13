@@ -9,8 +9,9 @@ import { createMailRouter } from "./routes/mail";
 import { SESSION_COOKIE, verifySession } from "./server/auth/session";
 import type { MailRepository } from "./server/mail/repository";
 import { handleJob } from "./server/jobs/consumer";
+import { buildBodyLoader } from "./server/jobs/deps";
 import { scheduledSync } from "./server/sync/cron";
-import { selectRepository, type BodyLoader } from "./runtime/repository";
+import { selectRepository } from "./runtime/repository";
 
 type AppEnv = {
   Bindings: Env;
@@ -39,8 +40,11 @@ app.get("/health", (c) =>
 let cachedFixtures: MailRepository | null = null;
 
 app.use("/api/*", async (c, next) => {
-  const bodyLoader: BodyLoader = async () => null;
-  const selected = await selectRepository(c.env, bodyLoader);
+  // The body loader is built once an account is connected, and reaches Gmail
+  // lazily on the first body request.
+  const selected = await selectRepository(c.env, (accountId) =>
+    buildBodyLoader(c.env, accountId),
+  );
 
   if (selected.source === "d1") {
     // Live data fails closed: no valid session means no mailbox metadata and no

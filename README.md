@@ -29,9 +29,12 @@ attachment upload are out of scope for v1 and hand off to Gmail.
 This is a read-only prototype. It runs against the **synthetic fixtures**
 bundled in the repository, and that demo path is open — anyone can load it and
 see the trays. **Live Gmail connection is not yet enabled for self-hosters.**
-The path that would read and classify a real mailbox is not wired end to end, so
-a self-hosted deployment cannot yet sync your mail. Everything below about
-Google consent is forward-looking, not a working install.
+The path that reads and classifies a real mailbox is now **implemented in code**
+— the sync driver, outbox publish, on-demand body fetch, and AI-backed
+classification all exist — but it has **never been exercised against real Google
+or a real deploy**, so no self-hosted deployment has synced or classified a real
+mailbox yet. Everything below about Google consent is forward-looking, not a
+working install.
 
 Local development and tests work today:
 
@@ -48,14 +51,16 @@ npm run dev     # dev server against synthetic fixtures
 There is **no one-click deploy**, and `wrangler deploy` as configured does not
 produce a working installation.
 
-- The Worker can be provisioned by hand (Worker, D1 database, queues), but the
-  live data path is incomplete, so a deployed instance cannot read a real
-  mailbox.
+- The Worker can be provisioned by hand (Worker, D1 database, queues), and the
+  live data path is now implemented in code, but it has never been exercised
+  against real Google or a real deploy, so no deployed instance has been shown
+  to read a real mailbox.
 - `wrangler deploy` ships the Worker **without the PWA**: this repository has no
   frontend build step and no `assets` binding in `wrangler.jsonc`, so a deploy
   does not publish the app shell.
-- Cron polling no-ops with no connected mailbox, and classification needs an AI
-  binding that is not configured.
+- Cron polling now runs the real sync (loads the active account, polls
+  `history.list`, publishes the outbox) and classification has an AI binding in
+  `wrangler.jsonc`; neither has been invoked against a real mailbox or deploy.
 
 Treat deployment as a work in progress, not a supported installation path. See
 [docs/spike-status.md](docs/spike-status.md) for exactly what runs and what does
@@ -138,12 +143,14 @@ is spelled out in [docs/spike-status.md](docs/spike-status.md).
 ## Status
 
 Gate A of the plan. The read-only vertical slice is built and tested against
-**synthetic fixtures**, and that demo path is open. The live Gmail path is **not**
-wired end to end: the reader body loader is a stub, classification needs an AI
-binding that is not configured, and the OAuth code paths have never been
-exercised against Google. Nothing is deployed. See
-[docs/spike-status.md](docs/spike-status.md) for what is proven, what is
-implemented but unexercised, and what is not implemented yet.
+**synthetic fixtures**, and that demo path is open. The live Gmail path is now
+**implemented in code** — the sync driver, outbox publish, on-demand reader body
+loader, AI binding, and version threading all exist — but it has **never been
+exercised against real Google or a real deploy**: no live OAuth consent or
+refresh round trip, no real cron or queue invocation, and no production D1 read
+counts. Nothing is deployed. Session auth is still a signed-cookie stopgap, not
+Better Auth. See [docs/spike-status.md](docs/spike-status.md) for what is
+proven, what is implemented but unexercised, and what is not implemented yet.
 
 ## Licence
 

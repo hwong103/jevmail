@@ -126,10 +126,11 @@ Any other Google identity is then rejected.
 
 ## 8. Connect Gmail (not enabled yet)
 
-The live path is not wired end to end, so signing in does not yet sync or
-classify real mail. When that path lands, the first sign-in will bind the
-installation, and the app will sync recent mail, classify it, and file it into
-trays. Today, expect the synthetic fixtures only.
+The live path is implemented in code but has never been exercised against real
+Google or a deploy, so signing in does not yet sync or classify real mail. Once
+that path is verified, the first sign-in will bind the installation, and the app
+will sync recent mail, classify it, and file it into trays. Today, expect the
+synthetic fixtures only.
 
 ## Troubleshooting
 

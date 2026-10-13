@@ -55,6 +55,40 @@ function decodeBody(part: GmailPart): string | null {
   }
 }
 
+function contentDisposition(part: GmailPart): string {
+  const header = part.headers?.find(
+    (h) => h.name.toLowerCase() === "content-disposition",
+  );
+  return (header?.value ?? "").trim().toLowerCase();
+}
+
+/**
+ * A leaf is an attachment when it is named, carries an attachment id, or says so
+ * in its Content-Disposition. Its bytes are never treated as the message body,
+ * so a `text/plain` *attachment* cannot be mistaken for the body text.
+ */
+function isAttachmentLike(part: GmailPart): boolean {
+  return (
+    Boolean(part.filename) ||
+    Boolean(part.body?.attachmentId) ||
+    contentDisposition(part).startsWith("attachment")
+  );
+}
+
+/**
+ * An encapsulated message (`message/rfc822` and friends) is a whole nested
+ * message, not this message's own body. Its parsed children must never surface
+ * as the outer body, even when it carries no attachment markers.
+ */
+function isEncapsulatedMessage(part: GmailPart): boolean {
+  const mimeType = part.mimeType.toLowerCase();
+  return (
+    mimeType === "message/rfc822" ||
+    mimeType === "message/global" ||
+    mimeType === "message/news"
+  );
+}
+
 /** Strip tags without ever loading remote resources. Never returns HTML. */
 export function htmlToText(html: string): string {
   return html
@@ -75,36 +109,50 @@ export function htmlToText(html: string): string {
 }
 
 /**
- * Walks MIME parts depth-first, preferring text/plain. Attachment bodies behind
- * an attachmentId are deliberately not downloaded: that is a user-attachment
- * fetch, out of scope for classification.
+ * Walks MIME parts depth-first, collecting the body candidates. Attachment-like
+ * and encapsulated-message parts are opaque subtrees: neither their own data nor
+ * anything beneath them is the body, so a text *attachment* or an attached
+ * container cannot be mistaken for the body and a message that only carries
+ * attachments reads as `missing_body`. Attachment bodies behind an attachmentId
+ * are deliberately not downloaded: that is a user-attachment fetch, out of scope
+ * for classification.
+ *
+ * text/plain wins over text/html. When several unambiguous candidates of the
+ * chosen type remain, the body is ambiguous: the first is used but the message
+ * is marked `truncated` rather than claiming a `complete` read of a body that
+ * may be partial or wrong.
  */
 export function extractBody(payload: GmailPart | undefined): ExtractedBody {
   if (!payload) return { text: null, quality: "missing_body" };
 
-  let plain: string | null = null;
-  let html: string | null = null;
-  let sawAttachment = false;
+  const plain: string[] = [];
+  const html: string[] = [];
   let totalBytes = 0;
 
   const walk = (part: GmailPart): void => {
     totalBytes += part.body?.size ?? 0;
-    if (part.filename || part.body?.attachmentId) sawAttachment = true;
-    if (part.mimeType === "text/plain" && part.body?.data) {
-      plain ??= decodeBody(part);
-    } else if (part.mimeType === "text/html" && part.body?.data) {
-      html ??= decodeBody(part);
+    // Stop at attachment-like or encapsulated-message subtrees: their own bytes
+    // and every descendant are outside the message's own body.
+    if (isAttachmentLike(part) || isEncapsulatedMessage(part)) return;
+    const text = part.body?.data ? decodeBody(part) : null;
+    if (text !== null && text.trim().length > 0) {
+      if (part.mimeType === "text/plain") plain.push(text);
+      else if (part.mimeType === "text/html") html.push(text);
     }
     for (const child of part.parts ?? []) walk(child);
   };
   walk(payload);
 
-  const chosen = plain ?? (html ? htmlToText(html) : null);
+  const candidates = plain.length > 0 ? plain : html.map(htmlToText);
+  // More than one candidate of the chosen type means the message has no single
+  // unambiguous body, so it is never reported as `complete`.
+  const ambiguous = candidates.length > 1;
+  const chosen = candidates[0] ?? null;
   if (!chosen || chosen.trim().length === 0) {
     return { text: null, quality: "missing_body" };
   }
 
-  const truncated = chosen.length > MAX_TEXT_BYTES;
+  const truncated = ambiguous || chosen.length > MAX_TEXT_BYTES;
   return {
     text: truncated ? chosen.slice(0, MAX_TEXT_BYTES) : chosen,
     quality: truncated ? "truncated" : "complete",

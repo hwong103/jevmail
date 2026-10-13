@@ -44,13 +44,14 @@ npm run deploy    # wrangler deploy
 
 ## Current state
 
-Gate A spike, partially proven. Nothing is deployed. `npm test` runs 100+ tests
+Gate A spike, partially proven. Nothing is deployed. `npm test` runs 145 tests
 in the Workers runtime. The read-only slice runs on synthetic fixtures, and that
-demo stays open and unauthenticated; the live Gmail data path is not wired end to
-end (the reader body loader is a stub and classification needs an AI binding that
-is not configured). A minimal signed-session boundary now gates the live D1
-path, which fails closed for anonymous callers. See `docs/spike-status.md` for
-what is verified versus what is not implemented.
+demo stays open and unauthenticated; the live Gmail data path is now implemented
+in code (sync driver, outbox publish, on-demand reader body loader, AI binding,
+version threading) but has never been exercised against real Google or a real
+deploy. A minimal signed-cookie session boundary gates the live D1 path as a
+stopgap (not Better Auth) and fails closed for anonymous callers. See
+`docs/spike-status.md` for what is verified versus what is not implemented.
 
 ## Plan
 
