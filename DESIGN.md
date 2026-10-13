@@ -7,7 +7,7 @@ choice is open, follow Gmail.
 
 The two product rules this system serves: **honest controls only** (nothing that
 pretends to mutate mail) and **state is visible** (read/unread, uncertainty, and
-"why this landed here" are always legible).
+"why this landed here" is one click from the message).
 
 ## Palette
 
@@ -84,11 +84,12 @@ is no left-border accent stripe anywhere.
   collapses to a 400px column beside an open message. Under 900px the row stacks
   to Gmail's mobile shape: sender on line 1 (bold when unread), subject on line
   2, date at the top right.
-- **Reader**: toolbar (Back, tray chip, "Correct a field", "Open in Gmail"),
-  22px subject, sender row, then the message body rendered on the pane itself
-  (no tinted card or border), and only then the Jev "why this landed here" and
-  answers as a quieter secondary section behind a hairline. Banners and the
-  correction editor are restyled, not removed.
+- **Reader**: toolbar (Back, tray chip, "Open in Gmail"), 22px subject, sender
+  row, then the message body rendered on the pane itself (no tinted card or
+  border), and only then a native, collapsed-by-default "Why this landed here"
+  disclosure behind a hairline. Expanding it reveals the reasons, the Jev
+  answers, and the correction editor; opening while correcting is automatic.
+  The tray chip and the coverage/error banners are restyled, not removed.
 - **Responsive**: the rail becomes an overlay drawer at ≤900px; the list is full
   width and the reader takes over when a message is open. No horizontal scroll
   at 390px.

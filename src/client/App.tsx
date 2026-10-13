@@ -164,6 +164,14 @@ function BackIcon() {
   );
 }
 
+function ChevronIcon() {
+  return (
+    <Icon className="chevron">
+      <path d="m9 6 6 6-6 6" />
+    </Icon>
+  );
+}
+
 function EditIcon() {
   return (
     <Icon>
@@ -300,6 +308,7 @@ function Reader({
 }) {
   const [body, setBody] = useState<MessageBody | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const disclosure = useRef<HTMLDetailsElement>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -314,6 +323,13 @@ function Reader({
     // The body is dropped on every navigation, so it never accumulates.
     return () => controller.abort();
   }, [item.gmailMessageId]);
+
+  // The correction editor lives inside the disclosure. If correcting is
+  // triggered without the user opening it (e.g. programmatically), open it so
+  // the editor is never stranded out of view.
+  useEffect(() => {
+    if (correcting && disclosure.current) disclosure.current.open = true;
+  }, [correcting]);
 
   const gmailUrl = `https://mail.google.com/mail/u/0/#all/${item.gmailMessageId}`;
 
@@ -330,10 +346,6 @@ function Reader({
           {TRAY_LABELS[item.tray]}
         </span>
         <span className="toolbar-spacer" />
-        <button className="quiet-btn" aria-pressed={correcting} onClick={onToggleCorrect}>
-          <EditIcon />
-          Correct a field
-        </button>
         <a className="pill" href={gmailUrl} target="_blank" rel="noreferrer noopener">
           <ExternalIcon />
           Open in Gmail
@@ -374,51 +386,65 @@ function Reader({
 
       {error && <div className="banner">{error}</div>}
 
-      <section className="reader-secondary" aria-label="Jev classification">
-        <section className="block" aria-label="Why this landed here">
-          <h3 className="block-title">Why this landed here</h3>
+      <details className="reader-secondary" ref={disclosure}>
+        <summary className="reader-secondary-summary">
+          <ChevronIcon />
+          <span className="reader-secondary-label">Why this landed here</span>
+          {item.trayReasons[0] && (
+            <span className="reader-secondary-hint">{item.trayReasons[0]}</span>
+          )}
+        </summary>
+
+        <div className="reader-secondary-body">
           <ul className="why">
             {item.trayReasons.map((reason) => (
               <li key={reason}>{reason}</li>
             ))}
           </ul>
-        </section>
 
-        <section className="block block--answers" aria-label="Jev answers">
           <div className="answers">
             {item.answers.map((answer) => (
               <AnswerRow key={answer.question} answer={answer} />
             ))}
           </div>
-        </section>
-      </section>
 
-      {correcting && (
-        <div className="corrections">
-          <div className="corrections-head">
-            <span>Correct a field</span>
-            <button className="quiet-btn" onClick={onToggleCorrect}>
-              Cancel
-            </button>
-          </div>
-          {item.answers.map((answer) => (
-            <fieldset key={answer.question}>
-              <legend>{QUESTION_LABELS[answer.question]}</legend>
-              <div className="options">
-                {OPTIONS[answer.question].map((option) => (
-                  <button
-                    key={display(option)}
-                    aria-pressed={isSelected(answer, option)}
-                    onClick={() => onCorrect(answer.question, option)}
-                  >
-                    {display(option)}
-                  </button>
-                ))}
+          <button
+            className="quiet-btn quiet-btn--inline"
+            aria-pressed={correcting}
+            onClick={onToggleCorrect}
+          >
+            <EditIcon />
+            Correct a field
+          </button>
+
+          {correcting && (
+            <div className="corrections">
+              <div className="corrections-head">
+                <span>Correct a field</span>
+                <button className="quiet-btn" onClick={onToggleCorrect}>
+                  Cancel
+                </button>
               </div>
-            </fieldset>
-          ))}
+              {item.answers.map((answer) => (
+                <fieldset key={answer.question}>
+                  <legend>{QUESTION_LABELS[answer.question]}</legend>
+                  <div className="options">
+                    {OPTIONS[answer.question].map((option) => (
+                      <button
+                        key={display(option)}
+                        aria-pressed={isSelected(answer, option)}
+                        onClick={() => onCorrect(answer.question, option)}
+                      >
+                        {display(option)}
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
+              ))}
+            </div>
+          )}
         </div>
-      )}
+      </details>
     </div>
   );
 }

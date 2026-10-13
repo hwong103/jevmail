@@ -598,6 +598,10 @@ input {
   color: var(--nav-active-fg);
 }
 
+.quiet-btn--inline {
+  justify-self: start;
+}
+
 .reader-subject {
   margin: 4px 0 16px;
   font-size: 22px;
@@ -631,29 +635,72 @@ input {
   font-variant-numeric: tabular-nums;
 }
 
-.block {
-  margin: 0 0 16px;
-}
-
-/* The Jev classification reads as a quieter secondary section below the
-   message: separated by a hairline so it never dominates the reader top. */
+/* The Jev classification is a native disclosure below the message: a
+   collapsed "Why this landed here" summary sits over the reasons, the answers,
+   and the correction editor. A hairline keeps it reading as a secondary
+   section so it never dominates the reader top. */
 .reader-secondary {
   margin-top: 28px;
-  padding-top: 20px;
+  padding-top: 4px;
   border-top: 1px solid var(--hairline);
 }
 
-.block-title {
-  margin: 0 0 6px;
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
+.reader-secondary-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0;
   color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.reader-secondary-summary::-webkit-details-marker {
+  display: none;
+}
+
+.reader-secondary-summary:hover {
+  color: var(--text);
+}
+
+.reader-secondary-summary .chevron {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  transition: transform var(--dur) var(--ease);
+}
+
+.reader-secondary[open] .reader-secondary-summary .chevron {
+  transform: rotate(90deg);
+}
+
+.reader-secondary-label {
+  flex: none;
+}
+
+.reader-secondary-hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.reader-secondary-body {
+  padding-bottom: 4px;
+}
+
+.reader-secondary-body .quiet-btn--inline,
+.reader-secondary-body .corrections {
+  margin-top: 12px;
 }
 
 .why {
-  margin: 0;
+  margin: 0 0 12px;
   padding-left: 20px;
   color: var(--muted);
   font-size: 13px;
@@ -661,12 +708,6 @@ input {
 
 .why li {
   margin-bottom: 2px;
-}
-
-.block--answers {
-  background: transparent;
-  border-radius: 0;
-  padding: 0;
 }
 
 .answers {
