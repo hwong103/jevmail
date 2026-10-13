@@ -7,6 +7,7 @@ import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createFixturePort } from "../src/server/classification/fixture";
 import type { ClassificationPort } from "../src/server/classification/classify";
+import { CommandCodeError } from "../src/server/classification/commandcode";
 import type { GmailMessage } from "../src/server/gmail/normalize";
 import { handleClassify, type ClassifyDeps } from "../src/server/jobs/classify";
 import { handleJob, type JobOverrides } from "../src/server/jobs/consumer";
@@ -352,5 +353,75 @@ describe("handleJob durability", () => {
     expect(resumed[0]).toMatchObject({ outcome: "succeeded" });
     expect(calls.classify).toBe(1);
     expect(await classificationCount()).toBe(1);
+  });
+
+  it("parks a job on a provider auth failure instead of retrying to death", async () => {
+    await insertMessage();
+    await insertClassifyJob("j10");
+    await insertOutbox("j10", "published");
+
+    // A bad key or wrong plan keeps failing on every retry, so it must park the
+    // job as an auth problem, exactly like an unconfigured provider.
+    const authPort: ClassificationPort = {
+      async classify() {
+        throw new CommandCodeError("auth", 401, "Command Code returned HTTP 401");
+      },
+    };
+    const blocked = await handleJob(fakeBatch([{ version: 1, jobId: "j10" }]), testEnv, {
+      classifyDeps: async () => ({ ...countingDeps().deps, port: authPort }),
+    });
+    expect(blocked[0]).toMatchObject({ outcome: "blocked_auth" });
+    // Nothing was stored for the failed call.
+    expect(await classificationCount()).toBe(0);
+    const parked = await db
+      .prepare("SELECT state, lease_token FROM jobs WHERE id = 'j10'")
+      .first<{ state: string; lease_token: string | null }>();
+    expect(parked?.state).toBe("blocked_auth");
+    expect(parked?.lease_token).toBeNull();
+    // Its outbox row is re-armed, so a fixed key resumes the job.
+    const outboxRow = await db
+      .prepare("SELECT state FROM outbox WHERE id = 'j10'")
+      .first<{ state: string }>();
+    expect(outboxRow?.state).toBe("pending");
+  });
+
+  it("does not park the job or re-arm the outbox when another worker reclaimed the lease", async () => {
+    await insertMessage();
+    await insertClassifyJob("j11");
+    await insertOutbox("j11", "published");
+
+    // The provider call simulates the lease being reclaimed by another worker
+    // before this worker's auth failure resolves. Its token is no longer ours.
+    const reclaimed: ClassificationPort = {
+      async classify() {
+        await db
+          .prepare(
+            "UPDATE jobs SET state = 'leased', lease_token = 'winner', lease_expires_at = ? WHERE id = 'j11'",
+          )
+          .bind(Date.now() + 60_000)
+          .run();
+        throw new CommandCodeError("auth", 401, "Command Code returned HTTP 401");
+      },
+    };
+
+    const blocked = await handleJob(fakeBatch([{ version: 1, jobId: "j11" }]), testEnv, {
+      classifyDeps: async () => ({ ...countingDeps().deps, port: reclaimed }),
+    });
+    expect(blocked[0]).toMatchObject({ outcome: "blocked_auth" });
+
+    // The stale worker must not park a job another worker now owns: the fenced
+    // UPDATE is a no-op and the job keeps the reclaimer's token.
+    const job = await db
+      .prepare("SELECT state, lease_token FROM jobs WHERE id = 'j11'")
+      .first<{ state: string; lease_token: string | null }>();
+    expect(job?.state).toBe("leased");
+    expect(job?.lease_token).toBe("winner");
+
+    // Nor may it re-arm the outbox row, which could clear a live publisher's
+    // lease or republish an already-completed job.
+    const outboxRow = await db
+      .prepare("SELECT state FROM outbox WHERE id = 'j11'")
+      .first<{ state: string }>();
+    expect(outboxRow?.state).toBe("published");
   });
 });

@@ -5,6 +5,7 @@ import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createFixturePort } from "../src/server/classification/fixture";
 import type { ClassificationPort } from "../src/server/classification/classify";
+import { CommandCodeJevPort } from "../src/server/classification/commandcode";
 import { JevClassificationPort } from "../src/server/classification/jev";
 import type { GmailMessage } from "../src/server/gmail/normalize";
 import { handleClassify, type ClassifyDeps } from "../src/server/jobs/classify";
@@ -354,16 +355,36 @@ describe("provider selection", () => {
     await seedAccount(db);
   });
 
-  it("uses the fixture provider only on an explicit opt-in and prefers the AI binding", () => {
+  it("selects the fixture only on an explicit opt-in, which wins over everything else", () => {
     expect(buildClassificationPort({} as unknown as Env)).toBeNull();
     expect(
       buildClassificationPort({ JEV_PROVIDER: "fixture" } as unknown as Env),
     ).not.toBeNull();
+    // An explicit fixture opt-in now wins even when a key or the AI binding is
+    // present: it is a deliberate local choice.
+    const withFixture = buildClassificationPort({
+      AI: { run: async () => ({}) },
+      JEV_API_KEY: "k",
+      JEV_PROVIDER: "fixture",
+    } as unknown as Env);
+    expect(withFixture).not.toBeInstanceOf(JevClassificationPort);
+    expect(withFixture).not.toBeInstanceOf(CommandCodeJevPort);
+  });
+
+  it("prefers a Command Code key over the AI binding, and falls back to AI", () => {
+    // A key is an explicit choice, so it wins over the Workers AI binding.
     expect(
       buildClassificationPort({
         AI: { run: async () => ({}) },
-        JEV_PROVIDER: "fixture",
+        JEV_API_KEY: "k",
       } as unknown as Env),
+    ).toBeInstanceOf(CommandCodeJevPort);
+    expect(
+      buildClassificationPort({ CMD_API_KEY: "k" } as unknown as Env),
+    ).toBeInstanceOf(CommandCodeJevPort);
+    // With no key, the AI binding is the default.
+    expect(
+      buildClassificationPort({ AI: { run: async () => ({}) } } as unknown as Env),
     ).toBeInstanceOf(JevClassificationPort);
   });
 

@@ -27,6 +27,30 @@ export interface ClassificationPort {
   classify(message: NormalizedMessage): Promise<RawClassification>;
 }
 
+export type ProviderFailureKind = "auth" | "retryable";
+
+/**
+ * A failure raised by a classification provider. `kind` says whether retrying
+ * can help: a `retryable` failure (timeout, 429, 5xx) is worth another attempt,
+ * while an `auth` failure (bad key or plan) is not and must park the job rather
+ * than spin. `status` carries the upstream HTTP status when there was one.
+ */
+export class ProviderError extends Error {
+  constructor(
+    readonly kind: ProviderFailureKind,
+    message: string,
+    readonly status?: number,
+  ) {
+    super(message);
+    this.name = "ProviderError";
+  }
+}
+
+/** True for a provider failure that a retry cannot fix (bad key or plan). */
+export function isProviderAuthError(error: unknown): boolean {
+  return error instanceof ProviderError && error.kind === "auth";
+}
+
 export interface ClassifyOutcome {
   answers: Answers;
   status: "complete" | "review" | "failed";
@@ -156,6 +180,10 @@ export async function classifyMessage(
   try {
     return normalizeRaw(await port.classify(message));
   } catch (error) {
+    // An auth failure is not transient: re-throw it so the job layer can park
+    // the job for an operator to fix, instead of retrying a key that will keep
+    // failing. Every other provider error is a retryable failure.
+    if (isProviderAuthError(error)) throw error;
     return {
       answers: emptyAnswers("provider_error"),
       status: "failed",

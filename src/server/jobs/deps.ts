@@ -6,6 +6,7 @@
 // leave mail unclassified while everything looked healthy.
 
 import { JevClassificationPort } from "../classification/jev";
+import { CommandCodeJevPort } from "../classification/commandcode";
 import { createFixturePort } from "../classification/fixture";
 import type { ClassificationPort } from "../classification/classify";
 import { extractBody, type GmailMessage } from "../gmail/normalize";
@@ -22,15 +23,20 @@ import type { MessageBody } from "../../contracts/dto";
 export type GmailFetcher = (gmailMessageId: string) => Promise<GmailMessage | null>;
 
 /**
- * Prefers the real Jev provider. Falls back to the deterministic fixture only
- * when explicitly asked to, so a deployed Worker can never silently classify
- * mail with test data.
+ * Selects the classifier. An explicit `JEV_PROVIDER=fixture` wins (a deliberate
+ * local choice); otherwise a Command Code API key wins over the Workers AI
+ * binding, since setting the secret is an explicit opt-in; otherwise the
+ * Workers AI binding is the default. The fixture is never reached implicitly,
+ * so a deployed Worker cannot silently classify mail with test data.
  */
 export function buildClassificationPort(env: Env): ClassificationPort | null {
-  // The AI binding is the real provider and wins even if JEV_PROVIDER is left
-  // behind in the environment.
-  if (env.AI) return new JevClassificationPort(env.AI);
   if (env.JEV_PROVIDER === "fixture") return createFixturePort();
+  // A key is an explicit choice, so it wins over the AI binding. `JEV_API_KEY`
+  // is the documented name; `CMD_API_KEY` is an accepted alias.
+  const key = env.JEV_API_KEY ?? env.CMD_API_KEY;
+  if (key) return new CommandCodeJevPort({ apiKey: key, baseUrl: env.JEV_BASE_URL });
+  // Workers AI is the default classifier.
+  if (env.AI) return new JevClassificationPort(env.AI);
   // Nothing configured: the caller parks the job rather than classifying with
   // test data.
   return null;

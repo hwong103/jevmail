@@ -107,6 +107,21 @@ export function buildState(message: NormalizedMessage): Record<string, string> {
   };
 }
 
+/**
+ * The shared System One input. Both the Workers AI binding and the Command
+ * Code Provider API send exactly this `{ state, questions }` shape, so the two
+ * ports cannot drift. Command Code additionally names the `model` beside it.
+ */
+export function buildJevInput(message: NormalizedMessage): {
+  state: Record<string, string>;
+  questions: ReturnType<typeof buildQuestions>;
+} {
+  return {
+    state: buildState(message),
+    questions: buildQuestions(),
+  };
+}
+
 /** Minimal Workers AI binding surface used here. */
 export interface AiBinding {
   run(model: string, input: unknown): Promise<unknown>;
@@ -116,10 +131,7 @@ export class JevClassificationPort implements ClassificationPort {
   constructor(private readonly ai: AiBinding) {}
 
   async classify(message: NormalizedMessage): Promise<RawClassification> {
-    const response = await this.ai.run(JEV_MODEL, {
-      state: buildState(message),
-      questions: buildQuestions(),
-    });
+    const response = await this.ai.run(JEV_MODEL, buildJevInput(message));
     return interpret(response);
   }
 }

@@ -102,6 +102,16 @@ itself, but once a body is handed to the provider, its handling is governed by
 that provider's terms. See
 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
 
+**Command Code adds a second path to that boundary.** When `JEV_API_KEY` is set,
+the same `typesafe/jev` model is reached through the Command Code Provider API at
+`https://api.commandcode.ai/provider/v1/systemone` instead of the Workers AI
+binding, and the mail body is sent there. Command Code documents that
+`typesafe/jev` has **no zero-data-retention upstream**, so it goes to a provider
+**without a retention guarantee**; a zero-data-retention request is refused with
+422, so this adapter deliberately never sends `x-cmd-zdr`. Do not enable the key
+unless you accept that boundary. Neither path has been exercised against a live
+provider from this checkout.
+
 ## Known deviations from PLAN-v2
 
 - **Compatibility date is `2026-08-22`,** the newest the bundled workerd
@@ -121,8 +131,9 @@ that provider's terms. See
 
 ## Known limitations (prototype)
 
-The Jev/AI classification call has no application-level timeout, so a slow or
-hanging provider response and the duplicate spend it can cause are unbounded by
-the app. Stored results remain protected: the classification write is idempotent
-and settlement is lease-token fenced, so a stale worker that wakes after its
-lease was reclaimed cannot clobber the row.
+The Command Code classification call bounds itself with a 30s `AbortSignal`
+timeout. The Workers AI binding call has no application-level timeout, so a slow
+or hanging response there and the duplicate spend it can cause are unbounded by
+the app. Stored results remain protected either way: the classification write is
+idempotent and settlement is lease-token fenced, so a stale worker that wakes
+after its lease was reclaimed cannot clobber the row.

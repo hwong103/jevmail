@@ -13,6 +13,16 @@ export interface Env {
   CREDENTIAL_KEY_VERSION?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
+  /**
+   * Command Code Provider API key. Set with `wrangler secret put JEV_API_KEY`.
+   * When present it selects the Command Code transport for `typesafe/jev` and
+   * wins over the Workers AI binding. Never put this in wrangler.jsonc.
+   */
+  JEV_API_KEY?: string;
+  /** Accepted alias for `JEV_API_KEY`; the latter is preferred. */
+  CMD_API_KEY?: string;
+  /** Overrides the Command Code base URL. Defaults to https://api.commandcode.ai. */
+  JEV_BASE_URL?: string;
   /** Only the literal "fixture" is honoured; it opts into the local classifier. */
   JEV_PROVIDER?: string;
   OWNER_EMAIL?: string;

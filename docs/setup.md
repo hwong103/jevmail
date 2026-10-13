@@ -112,7 +112,24 @@ cookie that gates live (D1) reads, so a missing or rotated value simply forces a
 re-sign-in rather than exposing mail. All four values are server-side only and
 are never sent to the browser.
 
-## 7. Optional: pre-pin the owner
+## 7. Optional: choose your classifier
+
+By default classification runs through the Workers AI `AI` binding and needs no
+key. To classify through the Command Code Provider API instead, set its key:
+
+```bash
+npx wrangler secret put JEV_API_KEY
+```
+
+Setting `JEV_API_KEY` (or its alias `CMD_API_KEY`) switches the classifier to
+Command Code and wins over the `AI` binding; `JEV_BASE_URL` overrides the
+default endpoint `https://api.commandcode.ai`. It is the same model
+(`typesafe/jev`) over a different transport, so no other setting changes. A
+bad or expired key parks classification as an auth problem rather than retrying
+forever, so a later sweep resumes once the key is fixed. Read the retention
+boundary in [spike-status.md](spike-status.md) before sending real mail to it.
+
+## 8. Optional: pre-pin the owner
 
 By default, whoever signs in first owns the installation. If your deployment URL
 might be discovered before you sign in, set an owner email so nobody else can
@@ -124,7 +141,7 @@ npx wrangler secret put OWNER_EMAIL
 
 Any other Google identity is then rejected.
 
-## 8. Connect Gmail (not enabled yet)
+## 9. Connect Gmail (not enabled yet)
 
 The live path is implemented in code but has never been exercised against real
 Google or a deploy, so signing in does not yet sync or classify real mail. Once

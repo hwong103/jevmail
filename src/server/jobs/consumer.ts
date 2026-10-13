@@ -23,6 +23,7 @@
 
 import type { QueueEnvelope } from "../../contracts/domain";
 import type { Env } from "../../runtime/env";
+import { isProviderAuthError } from "../classification/classify";
 import { handleClassify, type ClassifyDeps } from "./classify";
 import { buildClassificationPort, buildGmailFetcher, type GmailFetcher } from "./deps";
 
@@ -160,6 +161,14 @@ async function runJob(
     await settleUnderLease(env.DB, jobId, "succeeded", lease);
     return { jobId, kind: "classify", outcome: "succeeded" };
   } catch (error) {
+    // A provider auth failure (bad API key, wrong plan) will keep failing on
+    // every retry, so it parks the job for an operator to fix — with the same
+    // resumable `blocked_auth` state and re-armed outbox row as an unconfigured
+    // provider — rather than burning the queue's retry budget and dead-lettering.
+    if (isProviderAuthError(error)) {
+      await parkForAuth(env.DB, jobId, lease, now);
+      return { jobId, kind: "classify", outcome: "blocked_auth" };
+    }
     // Release the lease so the queue's retry can reclaim immediately rather
     // than waiting out the full lease window.
     await releaseLease(env.DB, jobId, lease);
@@ -224,6 +233,14 @@ async function releaseLease(db: D1Database, jobId: string, lease: string): Promi
  * Parks a job with no configured provider and re-arms its outbox row so the
  * next sweep re-delivers it. The job stays `blocked_auth` (resumable) rather
  * than terminal, and the publisher only re-sends once the backoff elapses.
+ *
+ * Both writes commit in one atomic batch and are fenced on the SAME lease token
+ * this worker claimed. The outbox re-arm runs first, while the token is still
+ * set, and only fires while this worker still owns the lease: if another worker
+ * reclaimed the job (a different token), the row is left alone, so a stale
+ * worker cannot clear a live publisher's lease or republish a completed job.
+ * Parking the job in the same batch keeps the job state and the outbox row from
+ * diverging.
  */
 async function parkForAuth(
   db: D1Database,
@@ -235,17 +252,18 @@ async function parkForAuth(
   await db.batch([
     db
       .prepare(
+        // Re-arm the outbox row only if this worker still holds the lease. The
+        // EXISTS check ties the re-arm to our own token, so a reclaimed job (its
+        // token differs) is not touched. Runs before the job update below clears
+        // the token, so the check still sees this worker's claim.
+        "UPDATE outbox SET state = 'pending', available_at = ?, lease_token = NULL, lease_expires_at = NULL WHERE job_id = ? AND state IN ('published', 'publishing') AND EXISTS (SELECT 1 FROM jobs WHERE id = ? AND lease_token = ?)",
+      )
+      .bind(availableAt, jobId, jobId, lease),
+    db
+      .prepare(
         "UPDATE jobs SET state = 'blocked_auth', available_at = ?, lease_token = NULL, lease_expires_at = NULL WHERE id = ? AND lease_token = ?",
       )
       .bind(availableAt, jobId, lease),
-    db
-      .prepare(
-        // Covers a row the publisher is mid-send on as well as a settled one:
-        // the publisher's completion is token-fenced, so clearing the lease here
-        // makes its later `published` write a no-op rather than a lost re-arm.
-        "UPDATE outbox SET state = 'pending', available_at = ?, lease_token = NULL, lease_expires_at = NULL WHERE job_id = ? AND state IN ('published', 'publishing')",
-      )
-      .bind(availableAt, jobId),
   ]);
 }
 

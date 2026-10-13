@@ -117,6 +117,16 @@ Gmail API (canonical)  ->  Sync Worker  ->  D1 outbox  ->  Queue
 This is the intended design. What is actually wired today — and what is not —
 is spelled out in [docs/spike-status.md](docs/spike-status.md).
 
+### Choose your classifier
+
+Classification always asks the same model (`typesafe/jev`); only the transport
+changes. **Workers AI is the default** — the `AI` binding in `wrangler.jsonc`
+needs no key. **Command Code is optional**: set `JEV_API_KEY`
+(`wrangler secret put JEV_API_KEY`) and the app calls the Command Code Provider
+API at `https://api.commandcode.ai/provider/v1/systemone` instead. A set key
+wins over the AI binding. `JEV_PROVIDER=fixture` is a local-only override that
+wins over both. See [docs/setup.md](docs/setup.md) for how to set the key.
+
 ## Design rules these tests enforce
 
 - Message bodies are never persisted, logged, or queued. There is deliberately
