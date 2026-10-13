@@ -1,10 +1,10 @@
 # Setup
 
-> **Status: forward-looking.** The live Gmail path is not enabled yet. The steps
-> below provision infrastructure and a Google OAuth client, but a deployment
-> cannot yet sync or classify real mail. See the deployment status in the
-> [README](../README.md) and [spike-status.md](spike-status.md) for what runs
-> today.
+> **Status: deployment is supported; the live path is not yet proven.** The
+> steps below provision infrastructure and a Google OAuth client, and
+> `npm run deploy` now does the whole Cloudflare side. But no deployment has
+> been shown to sync or classify real mail. See the [README](../README.md) and
+> [spike-status.md](spike-status.md) for what runs today.
 
 About 20 to 40 minutes, most of it in the Google Cloud console. Do these steps in
 order; step 2 is the one people get wrong and it costs a week of reconnects.
@@ -63,35 +63,52 @@ it at all. Once published to In production this is unnecessary.
 
 ## 5. Deploy to Cloudflare
 
-This is **not** a one-click deploy, and it does not produce a working
-installation today. If you still want to provision the Cloudflare side by hand:
-
 ```bash
 git clone https://github.com/hwong103/jevmail.git
 cd jevmail
 npm install
-npx wrangler d1 create jevmail     # note the database_id it prints
-```
-
-Put that `database_id` into `wrangler.jsonc`, then create the queues:
-
-```bash
-npx wrangler queues create jevmail-jobs
-npx wrangler queues create jevmail-jobs-dlq
-```
-
-Apply migrations and deploy:
-
-```bash
-npm run db:migrate
 npm run deploy
 ```
 
-Note that `npm run deploy` ships the Worker only. There is no frontend build and
-no `assets` binding in `wrangler.jsonc`, so this does not publish the PWA app
-shell, and the live data path is incomplete regardless.
+`npm run deploy` does the whole Cloudflare side in one idempotent pass:
+
+1. Builds the Worker **and** the PWA (`vite build` + `tsc -p tsconfig.server.json`).
+2. Resolves your D1 database by name (default `jevmail`), creating it if absent.
+3. Creates the `jevmail-jobs` queue and its `jevmail-jobs-dlq` dead-letter queue.
+4. Applies migrations to the remote database.
+5. Deploys and prints the Worker URL plus the remaining secrets to set.
+
+Re-running is safe: the database and queues are reused, not recreated. Override
+the resource names with `JEVMAIL_DB_NAME` (default `jevmail`) and
+`JEVMAIL_QUEUE_NAME` (default `jevmail-jobs`).
+
+The build strips the `.dev.vars` the Cloudflare Vite plugin emits into
+`dist/jevmail/`, and `wrangler deploy` never uploads it in any case, so your
+local secrets cannot end up in a deployed artifact. If the account has hit the
+D1 database limit, the script stops with the three ways to proceed (delete a
+database, upgrade the plan, or reuse one via `JEVMAIL_DB_NAME`).
+
+Preview the plan first — this reads your account and prints what it *would* do,
+but writes nothing at all to Cloudflare:
+
+```bash
+npm run deploy -- --dry-run
+```
+
+The committed `wrangler.jsonc` stays a generic template holding the placeholder
+D1 id; your real database id is written only into the gitignored generated
+config (`dist/jevmail/wrangler.json`) at deploy time. If you need the bare
+command, `npm run deploy:raw` runs `wrangler deploy` directly against that
+generated config.
+
+When it finishes it prints your Worker URL, e.g.
+`https://jevmail.<your-subdomain>.workers.dev`. That hostname is what goes in
+the OAuth redirect URI from step 3.
 
 ## 6. Set the secrets
+
+`npm run deploy` prints this exact checklist when it finishes. Set all four
+secrets; the script already sets the `CREDENTIAL_KEY_VERSION` var to `1` for you.
 
 ```bash
 npx wrangler secret put GOOGLE_CLIENT_ID

@@ -28,13 +28,13 @@ attachment upload are out of scope for v1 and hand off to Gmail.
 
 This is a read-only prototype. It runs against the **synthetic fixtures**
 bundled in the repository, and that demo path is open — anyone can load it and
-see the trays. **Live Gmail connection is not yet enabled for self-hosters.**
-The path that reads and classifies a real mailbox is now **implemented in code**
-— the sync driver, outbox publish, on-demand body fetch, and AI-backed
-classification all exist — but it has **never been exercised against real Google
-or a real deploy**, so no self-hosted deployment has synced or classified a real
-mailbox yet. Everything below about Google consent is forward-looking, not a
-working install.
+see the trays. **Deployment is now supported end to end (`npm run deploy`), but
+the live Gmail path has not been verified against real Google.** The path that
+reads and classifies a real mailbox is **implemented in code** — the sync driver,
+outbox publish, on-demand body fetch, and AI-backed classification all exist —
+but it has **never been exercised against real Google or a real deploy**, so no
+self-hosted deployment has synced or classified a real mailbox yet. Everything
+below about Google consent is forward-looking, not a proven install.
 
 Local development and tests work today:
 
@@ -46,23 +46,39 @@ npm test        # migration sync check plus the test suite
 npm run dev     # dev server against synthetic fixtures
 ```
 
-## Deployment status: not supported end to end
+## Deployment
 
-There is **no one-click deploy**, and `wrangler deploy` as configured does not
-produce a working installation.
+`npm run deploy` provisions and deploys the whole installation in one idempotent
+pass. It:
 
-- The Worker can be provisioned by hand (Worker, D1 database, queues), and the
-  live data path is now implemented in code, but it has never been exercised
-  against real Google or a real deploy, so no deployed instance has been shown
-  to read a real mailbox.
-- `wrangler deploy` ships the Worker **without the PWA**: this repository has no
-  frontend build step and no `assets` binding in `wrangler.jsonc`, so a deploy
-  does not publish the app shell.
-- Cron polling now runs the real sync (loads the active account, polls
-  `history.list`, publishes the outbox) and classification has an AI binding in
-  `wrangler.jsonc`; neither has been invoked against a real mailbox or deploy.
+1. Builds the Worker **and** the PWA (`vite build` + `tsc -p tsconfig.server.json`),
+   which emits the app shell and an `assets` binding.
+2. Resolves your D1 database by name (default `jevmail`), creating it if absent.
+3. Ensures the `jevmail-jobs` queue and its `jevmail-jobs-dlq` dead-letter queue.
+4. Applies migrations to the remote database.
+5. Runs `wrangler deploy`, then prints the Worker URL and the secrets still to
+   set.
 
-Treat deployment as a work in progress, not a supported installation path. See
+The committed `wrangler.jsonc` stays a **generic public template**: it carries
+the placeholder D1 id `00000000-0000-0000-0000-000000000000` and never an
+installation-specific id. The real database id and queue names are written at
+deploy time into the gitignored generated config (`dist/jevmail/wrangler.json`)
+only. Override the resource names with `JEVMAIL_DB_NAME` and
+`JEVMAIL_QUEUE_NAME`.
+
+```bash
+npm run deploy              # build, provision, migrate, deploy
+npm run deploy -- --dry-run # print the plan; writes nothing to Cloudflare
+npm run deploy:raw          # escape hatch: bare `wrangler deploy`
+```
+
+See [docs/setup.md](docs/setup.md) for the full walkthrough, including the
+secrets checklist and the Google OAuth redirect to register.
+
+**Not yet proven:** no self-hosted deployment has synced or classified a real
+mailbox. The deploy path ships and is idempotent, but the live Gmail path is
+still unexercised end to end — no live OAuth round trip, no real cron or queue
+invocation, no production D1 read counts. See
 [docs/spike-status.md](docs/spike-status.md) for exactly what runs and what does
 not.
 
@@ -147,7 +163,8 @@ wins over both. See [docs/setup.md](docs/setup.md) for how to set the key.
 | `npm test` | Migration sync check plus the test suite in the Workers runtime |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run dev` | Local dev server against synthetic fixtures |
-| `npm run deploy` | `wrangler deploy` (ships the Worker only — see Deployment status) |
+| `npm run deploy` | Build, provision (D1 + queues), migrate, and deploy the whole installation. `-- --dry-run` prints the plan and writes nothing. |
+| `npm run deploy:raw` | Escape hatch: bare `wrangler deploy` against the generated config |
 | `npm run db:migrate` | Apply migrations to the remote database |
 
 ## Status

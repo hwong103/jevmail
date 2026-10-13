@@ -36,6 +36,23 @@ actually been exercised.
 | The grant is never stored in plaintext | The stored account row is asserted to contain no `ya29.` or `1//` token. |
 | The credential IV is stored beside the ciphertext | Migration `0003`; without it a stored refresh token cannot be decrypted. |
 
+## Deploy path
+
+Verified on 2026-10-13, locally, without touching Cloudflare.
+
+| Proof | How it is verified |
+|---|---|
+| The build emits both the Worker and the PWA | `npm run build` emits `dist/jevmail/index.js` and `dist/client/**`, and generates `dist/jevmail/wrangler.json` with `assets.directory = ../client`. |
+| A deploy carries the PWA | `npx wrangler deploy --dry-run` follows the redirected generated config, reads 10 files from `dist/client` (~322 KiB), and reports the `DB`, `JOB_QUEUE`, and `AI` bindings. |
+| The deploy plan is correct and writes nothing | `node scripts/deploy.mjs --dry-run` reads `whoami`, `d1 list`, and `queues list`, then prints the database id (or the create command), the queue names, and the deploy command — with no Cloudflare writes. |
+| The deploy config stays a generic template | `wrangler.jsonc` keeps the placeholder D1 id `00000000-0000-0000-0000-000000000000`; the real id and queue names are written only into the gitignored `dist/jevmail/wrangler.json` at deploy time. `git status` shows no installation-specific id in any tracked file. |
+| The full deploy control flow runs | `node scripts/deploy.mjs` was exercised with the mutating `npx` calls stubbed: it patched the generated config in place, and `wrangler deploy --dry-run` then accepted that patched config and bound the `CREDENTIAL_KEY_VERSION` var. |
+| The build never carries local dev secrets | The Cloudflare Vite plugin emits `dist/jevmail/.dev.vars` during `vite build`; `npm run build` then deletes it (`node scripts/deploy.mjs --clean-dist`), and the deploy path strips it again. Independently, `wrangler deploy` cannot upload it: the worker entry is `index.js`, `assets.directory` is `../client`, module rules match only `**/*.js`/`**/*.mjs`, and `dist/client/.assetsignore` lists `.dev.vars`. A dry run with the file present still read only the 10 `dist/client` assets and never listed it. |
+
+**Still needs a real deploy.** No actual `wrangler deploy`, D1 create, queue
+create, or remote migration has been run from this checkout, and no deployed
+instance has synced or classified a real mailbox. The rows below still apply.
+
 ## Wired but not exercised against Google
 
 The OAuth code paths exist and are unit-tested, but no request has ever been
