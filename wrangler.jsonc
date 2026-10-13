@@ -13,11 +13,13 @@
   },
   // Workers AI. The classify job runs Cloudflare's `typesafe/jev` model through
   // this binding; without it a classify job parks as blocked_auth rather than
-  // guessing. Workers AI has no local emulation, so the binding is remote by
-  // definition; stating it suppresses the local-dev usage warning.
+  // guessing. Workers AI cannot be emulated locally, so a bare binding is used.
+  // `remote: true` was removed because it forced the test pool to open a remote
+  // proxy session and require CLOUDFLARE_API_TOKEN, breaking credential-free CI.
+  // Exercising live AI from local dev needs credentials via `wrangler dev
+  // --remote` (or a deploy); local tests do not call the binding.
   "ai": {
-    "binding": "AI",
-    "remote": true
+    "binding": "AI"
   },
   "d1_databases": [
     {
